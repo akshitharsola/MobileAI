@@ -9,5 +9,10 @@
 .cxx
 local.properties
 app/build/
-# Keep APK when present
+!app/build/
+!app/build/outputs/
 !app/build/outputs/apk/
+!app/build/outputs/apk/debug/
+!app/build/outputs/apk/debug/*.apk
+!app/build/outputs/apk/release/
+!app/build/outputs/apk/release/*.apk
