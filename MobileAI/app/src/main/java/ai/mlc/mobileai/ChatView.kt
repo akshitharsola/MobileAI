@@ -57,6 +57,18 @@ fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, ac
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 10.dp)) {
             val listState = rememberLazyListState()
             val coroutineScope = rememberCoroutineScope()
+            if (chatState.modelName.value.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No model loaded.\nGo to Models and tap the chat icon to load one first.",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(32.dp)
+                    )
+                }
+                return@Scaffold
+            }
             Text(text = chatState.report.value, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(top = 5.dp))
             Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 5.dp))
             LazyColumn(
