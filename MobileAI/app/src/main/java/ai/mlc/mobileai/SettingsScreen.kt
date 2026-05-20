@@ -18,7 +18,7 @@ import androidx.navigation.NavController
 
 @ExperimentalMaterial3Api
 @Composable
-fun SettingsScreen(navController: NavController, activity: MainActivity) {
+fun SettingsScreen(navController: NavController, activity: MainActivity, appViewModel: AppViewModel) {
     val prefs = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
     var botToken by remember { mutableStateOf(prefs.getString("bot_token", "") ?: "") }
     var apiPort by remember { mutableStateOf(prefs.getInt("api_port", 8080).toString()) }
@@ -26,6 +26,13 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
     val service = activity.getInferenceService()
+
+    val downloadedModels = appViewModel.modelList.filter { it.modelInitState.value == ModelInitState.Finished }
+    val modelIds = downloadedModels.map { it.modelConfig.modelId }
+    var defaultModel by remember {
+        mutableStateOf(prefs.getString("default_model", modelIds.firstOrNull() ?: "") ?: "")
+    }
+    var defaultModelExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -85,6 +92,41 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
                 singleLine = true
             )
 
+            if (modelIds.isNotEmpty()) {
+                Divider()
+                Text("Default Model", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Used when a request arrives and no model is loaded.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                ExposedDropdownMenuBox(
+                    expanded = defaultModelExpanded,
+                    onExpandedChange = { defaultModelExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = defaultModel.substringBefore("-q4f").ifBlank { "Select model" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Default Model") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = defaultModelExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = defaultModelExpanded,
+                        onDismissRequest = { defaultModelExpanded = false }
+                    ) {
+                        modelIds.forEach { id ->
+                            DropdownMenuItem(
+                                text = { Text(id.substringBefore("-q4f")) },
+                                onClick = { defaultModel = id; defaultModelExpanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+
             Button(
                 onClick = {
                     val newToken = botToken.trim()
@@ -93,6 +135,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
                         .putInt("context_len", contextLen.toIntOrNull() ?: 2048)
+                        .putString("default_model", defaultModel)
                         .apply()
                     // Restart bot immediately if token changed and service is bound
                     if (newToken.isNotBlank() && service != null) {
@@ -112,7 +155,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
 
             Divider()
             Text(
-                "About\n\nMobileAI v1.0\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
+                "About\n\nLocalis v1.1\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
                 style = MaterialTheme.typography.bodySmall
             )
         }

@@ -12,8 +12,12 @@ import io.ktor.http.*
 import io.ktor.server.plugins.cors.routing.*
 import kotlinx.coroutines.runBlocking
 
-data class ChatRequest(val prompt: String = "", val max_tokens: Int = 512)
-data class ChatResponse(val response: String)
+data class ChatRequest(
+    val prompt: String = "",
+    val max_tokens: Int = 512,
+    val model: String? = null   // optional: "1.7b", "4b", or full model ID
+)
+data class ChatResponse(val response: String, val model: String)
 data class HealthResponse(val status: String, val model: String, val loaded: Boolean)
 data class ModelInfo(val id: String, val loaded: Boolean)
 
@@ -41,7 +45,17 @@ class ApiServer(
                 }
 
                 get("/models") {
-                    val models = listOf(ModelInfo(id = service.loadedModelName(), loaded = service.isModelLoaded()))
+                    val vm = service.appViewModel
+                    val models = if (vm != null) {
+                        vm.modelList.map { m ->
+                            ModelInfo(
+                                id = m.modelConfig.modelId,
+                                loaded = service.loadedModelName() == m.modelConfig.modelId
+                            )
+                        }
+                    } else {
+                        listOf(ModelInfo(id = service.loadedModelName(), loaded = service.isModelLoaded()))
+                    }
                     call.respondText(gson.toJson(models), ContentType.Application.Json)
                 }
 
@@ -52,8 +66,9 @@ class ApiServer(
                         call.respond(HttpStatusCode.BadRequest, "Missing prompt")
                         return@post
                     }
-                    val response = service.generateBlocking(req.prompt, req.max_tokens)
-                    call.respondText(gson.toJson(ChatResponse(response)), ContentType.Application.Json)
+                    val response = service.generateBlocking(req.prompt, req.max_tokens, req.model)
+                    val resp = ChatResponse(response = response, model = service.loadedModelName())
+                    call.respondText(gson.toJson(resp), ContentType.Application.Json)
                 }
 
                 post("/generate") {
@@ -63,8 +78,9 @@ class ApiServer(
                         call.respond(HttpStatusCode.BadRequest, "Missing prompt")
                         return@post
                     }
-                    val response = service.generateBlocking(req.prompt, req.max_tokens)
-                    call.respondText(gson.toJson(ChatResponse(response)), ContentType.Application.Json)
+                    val response = service.generateBlocking(req.prompt, req.max_tokens, req.model)
+                    val resp = ChatResponse(response = response, model = service.loadedModelName())
+                    call.respondText(gson.toJson(resp), ContentType.Application.Json)
                 }
             }
         }.start(wait = false)

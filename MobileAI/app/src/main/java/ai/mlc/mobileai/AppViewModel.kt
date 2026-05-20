@@ -203,7 +203,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     inner class ModelState(
         val modelConfig: ModelConfig,
         private val modelUrl: String,
-        private val modelDirFile: File
+        val modelDirFile: File
     ) {
         var modelInitState = mutableStateOf(ModelInitState.Initializing)
         private var paramsConfig = ParamsConfig(emptyList())

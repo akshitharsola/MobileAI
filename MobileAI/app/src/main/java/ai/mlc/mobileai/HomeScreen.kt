@@ -22,13 +22,15 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val isLoaded = appViewModel.chatState.chatable()
     val ramUsed = appViewModel.ramUsageMB.value
     val ramTotal = appViewModel.totalRamMB.value
+    val modelList = appViewModel.modelList
+    val service = activity.getInferenceService()
 
     LaunchedEffect(Unit) { appViewModel.updateRamUsage() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MobileAI", color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text("Localis", color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
                     IconButton(onClick = { navController.navigate("settings") }) {
@@ -51,7 +53,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             StatusCard(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
-                value = if (isLoaded) modelName.substringBefore("-q4f") else "Tap 'Load Model' to start",
+                value = if (isLoaded) modelName.substringBefore("-q4f") else "No model loaded",
                 ok = isLoaded
             )
 
@@ -62,7 +64,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ok = ramUsed < ramTotal * 0.85
             )
 
-            val service = activity.getInferenceService()
             StatusCard(
                 icon = Icons.Outlined.Cloud,
                 title = "API Server",
@@ -76,6 +77,53 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 value = if (service?.telegramPoller != null) "Active" else "Inactive",
                 ok = service?.telegramPoller != null
             )
+
+            // Model selector — only show if models are downloaded
+            val downloadedModels = modelList.filter { it.modelInitState.value == ModelInitState.Finished }
+            if (downloadedModels.isNotEmpty()) {
+                Divider()
+                Text("Active Model", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    downloadedModels.forEach { m ->
+                        val shortName = m.modelConfig.modelId.substringBefore("-q4f")
+                        val isActive = isLoaded && modelName == m.modelConfig.modelId
+                        if (isActive) {
+                            Button(
+                                onClick = {},
+                                modifier = Modifier.weight(1f)
+                            ) { Text(shortName) }
+                        } else {
+                            OutlinedButton(
+                                onClick = {
+                                    m.startChat()
+                                    appViewModel.updateRamUsage()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(shortName) }
+                        }
+                    }
+                    // Offload button — only when a model is loaded
+                    if (isLoaded) {
+                        OutlinedButton(
+                            onClick = {
+                                service?.offloadModel()
+                                appViewModel.updateRamUsage()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Filled.PowerSettingsNew, null,
+                                modifier = Modifier.padding(end = 4.dp).size(16.dp))
+                            Text("Offload")
+                        }
+                    }
+                }
+            }
 
             Divider()
             Text("Quick Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -139,7 +187,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "MobileAI — Distributed Edge AI Node\nBased on MLC-LLM (Apache 2.0)",
+                "Localis — Distributed Edge AI Node\nBased on MLC-LLM (Apache 2.0)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

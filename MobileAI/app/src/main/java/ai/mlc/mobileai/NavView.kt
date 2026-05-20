@@ -18,6 +18,6 @@ fun NavView(activity: Activity, appViewModel: AppViewModel = viewModel()) {
         composable("home") { HomeScreen(navController, appViewModel, activity as MainActivity) }
         composable("models") { StartView(navController, appViewModel) }
         composable("chat") { ChatView(navController, appViewModel.chatState, activity) }
-        composable("settings") { SettingsScreen(navController, activity as MainActivity) }
+        composable("settings") { SettingsScreen(navController, activity as MainActivity, appViewModel) }
     }
 }

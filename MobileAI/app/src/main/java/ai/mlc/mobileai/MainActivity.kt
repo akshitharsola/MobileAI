@@ -32,6 +32,7 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     var hasImage = false
     lateinit var chatState: AppViewModel.ChatState
+    private lateinit var appViewModelRef: AppViewModel
 
     private var inferenceService: ForegroundInferenceService? = null
     private var clipboardMonitor: ClipboardMonitor? = null
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
             val service = (binder as ForegroundInferenceService.LocalBinder).getService()
             inferenceService = service
             service.chatState = chatState
+            service.appViewModel = appViewModelRef
             clipboardMonitor = ClipboardMonitor(this@MainActivity, service)
             clipboardMonitor?.start()
             // Auto-start API server and Telegram bot if token is saved
@@ -77,6 +79,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val appViewModel = androidx.lifecycle.ViewModelProvider(this)[AppViewModel::class.java]
+        appViewModelRef = appViewModel
         chatState = appViewModel.chatState
         requestNeededPermissions()
         startAndBindService()

@@ -28,7 +28,7 @@ private data class TgSendMessage(
 
 class TelegramPoller(
     private val botToken: String,
-    private val onPrompt: (String) -> String
+    private val service: ForegroundInferenceService
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -77,12 +77,37 @@ class TelegramPoller(
 
     private fun handleMessage(chatId: Long, text: String) {
         when {
-            text == "/start" -> sendMessage(chatId, "MobileAI is running. Send me any prompt and I'll run it through the local model.")
-            text == "/status" -> sendMessage(chatId, "Bot is online. Send /model to check the loaded model.")
-            text.startsWith("/model") -> sendMessage(chatId, "Current model will be shown in the app's Home screen.")
+            text == "/start" -> sendMessage(chatId,
+                "Localis is running.\n\nSend any prompt for inference.\n\n" +
+                "Commands:\n/status — show active model\n/model 1.7b — switch to Qwen3-1.7B\n/model 4b — switch to Qwen3-4B"
+            )
+            text == "/status" -> {
+                val loaded = service.isModelLoaded()
+                val name = service.loadedModelName()
+                sendMessage(chatId, if (loaded) "Active model: $name" else "No model loaded. Use /model 1.7b or /model 4b to load one.")
+            }
+            text.startsWith("/model ") -> {
+                val arg = text.removePrefix("/model ").trim()
+                if (arg.isBlank()) {
+                    sendMessage(chatId, "Usage: /model 1.7b  or  /model 4b")
+                    return
+                }
+                val switched = service.switchModel(arg)
+                if (switched) {
+                    val resolved = service.resolveModelId(arg) ?: arg
+                    sendMessage(chatId, "Switching to $resolved… send a message when ready.")
+                } else {
+                    sendMessage(chatId, "Model '$arg' not found or not downloaded. Available: 1.7b, 4b")
+                }
+            }
+            text == "/model" -> sendMessage(chatId,
+                "Current: ${service.loadedModelName()}\n\nSwitch with:\n/model 1.7b\n/model 4b"
+            )
             else -> {
-                sendMessage(chatId, "Processing…")
-                val response = try { onPrompt(text) } catch (e: Exception) { "Error: ${e.message}" }
+                sendMessage(chatId, "⏳ Processing…")
+                val response = try {
+                    runBlocking { service.generateBlocking(text) }
+                } catch (e: Exception) { "Error: ${e.message}" }
                 sendMessage(chatId, response)
             }
         }
