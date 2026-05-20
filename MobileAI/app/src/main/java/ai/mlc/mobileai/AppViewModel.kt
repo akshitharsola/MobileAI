@@ -423,7 +423,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private fun mainTerminateChat(callback: () -> Unit) {
             executorService.submit {
                 callBackend { engine.unload() }
-                scope.launch { clearHistory(); switchToReady(); callback() }
+                scope.launch {
+                    clearHistory()
+                    modelName.value = ""
+                    modelLib = ""
+                    modelPath = ""
+                    switchToReady()
+                    callback()
+                }
             }
         }
 
@@ -532,7 +539,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
         private fun appendMessage(role: MessageRole, text: String) { messages.add(MessageData(role, text)) }
         private fun updateMessage(role: MessageRole, text: String) { messages[messages.size - 1] = MessageData(role, text) }
-        fun chatable(): Boolean = modelChatState.value == ModelChatState.Ready
+        fun chatable(): Boolean = modelChatState.value == ModelChatState.Ready && modelName.value.isNotBlank()
         fun interruptable(): Boolean = modelChatState.value == ModelChatState.Ready ||
                 modelChatState.value == ModelChatState.Generating ||
                 modelChatState.value == ModelChatState.Failed

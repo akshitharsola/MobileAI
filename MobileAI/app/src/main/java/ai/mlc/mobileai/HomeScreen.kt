@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import kotlinx.coroutines.delay
 
 @ExperimentalMaterial3Api
 @Composable
@@ -24,8 +25,20 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val ramTotal = appViewModel.totalRamMB.value
     val modelList = appViewModel.modelList
     val service = activity.getInferenceService()
+    var offloading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { appViewModel.updateRamUsage() }
+    // Poll RAM every 3s so it stays current without flickering on button press
+    LaunchedEffect(Unit) {
+        while (true) {
+            appViewModel.updateRamUsage()
+            delay(3000)
+        }
+    }
+
+    // Clear offloading spinner once model is unloaded
+    LaunchedEffect(isLoaded) {
+        if (!isLoaded) offloading = false
+    }
 
     Scaffold(
         topBar = {
@@ -53,8 +66,12 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             StatusCard(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
-                value = if (isLoaded) modelName.substringBefore("-q4f") else "No model loaded",
-                ok = isLoaded
+                value = when {
+                    offloading -> "Offloading…"
+                    isLoaded -> modelName.substringBefore("-q4f")
+                    else -> "No model loaded"
+                },
+                ok = isLoaded && !offloading
             )
 
             StatusCard(
@@ -81,51 +98,66 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             // Model selector — only show if models are downloaded
             val downloadedModels = modelList.filter { it.modelInitState.value == ModelInitState.Finished }
             if (downloadedModels.isNotEmpty()) {
-                Divider()
-                Text("Active Model", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    downloadedModels.forEach { m ->
-                        val shortName = m.modelConfig.modelId.substringBefore("-q4f")
-                        val isActive = isLoaded && modelName == m.modelConfig.modelId
-                        if (isActive) {
-                            Button(
-                                onClick = {},
-                                modifier = Modifier.weight(1f)
-                            ) { Text(shortName) }
-                        } else {
-                            OutlinedButton(
-                                onClick = {
-                                    m.startChat()
-                                    appViewModel.updateRamUsage()
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { Text(shortName) }
-                        }
-                    }
-                    // Offload button — only when a model is loaded
-                    if (isLoaded) {
-                        OutlinedButton(
-                            onClick = {
-                                service?.offloadModel()
-                                appViewModel.updateRamUsage()
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        ) {
-                            Icon(Icons.Filled.PowerSettingsNew, null,
-                                modifier = Modifier.padding(end = 4.dp).size(16.dp))
-                            Text("Offload")
+                HorizontalDivider()
+                Text("Model", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // One row per model
+                        downloadedModels.forEach { m ->
+                            val shortName = m.modelConfig.modelId.substringBefore("-q4f")
+                            val vram = m.estimatedVramGB()
+                            val isActive = isLoaded && modelName == m.modelConfig.modelId
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                // Active indicator dot
+                                Icon(
+                                    if (isActive) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+                                    null,
+                                    tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(shortName, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
+                                    Text("~${vram}GB VRAM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                if (isActive) {
+                                    // Offload button
+                                    OutlinedButton(
+                                        onClick = {
+                                            offloading = true
+                                            service?.offloadModel()
+                                        },
+                                        enabled = !offloading,
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        if (offloading) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Offloading…", style = MaterialTheme.typography.labelMedium)
+                                        } else {
+                                            Text("Offload", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                } else {
+                                    // Load button
+                                    Button(
+                                        onClick = { m.startChat() },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Load", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            Divider()
+            HorizontalDivider()
             Text("Quick Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -159,7 +191,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                             val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
                             service?.startApiServer(prefs.getInt("api_port", 8080))
                         }
-                        appViewModel.updateRamUsage()
                     },
                     enabled = service != null,
                     modifier = Modifier.weight(1f)
@@ -176,7 +207,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                             val token = prefs.getString("bot_token", "") ?: ""
                             if (token.isNotBlank()) service?.startTelegramPoller(token)
                         }
-                        appViewModel.updateRamUsage()
                     },
                     enabled = service != null,
                     modifier = Modifier.weight(1f)
