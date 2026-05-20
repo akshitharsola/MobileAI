@@ -1,0 +1,7 @@
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
+set(USE_METAL ON)
+set(USE_VULKAN OFF)
+set(USE_OPENCL OFF)
+set(USE_CUDA OFF)
+set(SUMMARIZE ON)
+set(USE_LLVM "/opt/homebrew/opt/llvm/bin/llvm-config")

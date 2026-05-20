@@ -1,0 +1,19 @@
+diff --git a/cmake/modules/Logging.cmake b/cmake/modules/Logging.cmake
+index 09bb094c2..6eba10fdf 100644
+--- a/cmake/modules/Logging.cmake
++++ b/cmake/modules/Logging.cmake
+@@ -21,9 +21,9 @@ include(FindPackageHandleStandardArgs)
+ 
+ if(USE_CUSTOM_LOGGING)
+   # Set and propagate TVM_LOG_CUSTOMIZE flag is custom logging has been requested
+-  target_compile_definitions(tvm_objs PUBLIC TVM_LOG_CUSTOMIZE=1)
+-  target_compile_definitions(tvm_runtime_objs PUBLIC TVM_LOG_CUSTOMIZE=1)
+-  target_compile_definitions(tvm_libinfo_objs PUBLIC TVM_LOG_CUSTOMIZE=1)
+-  target_compile_definitions(tvm_compiler PUBLIC TVM_LOG_CUSTOMIZE=1)
+-  target_compile_definitions(tvm_runtime PUBLIC TVM_LOG_CUSTOMIZE=1)
++  foreach(_tvm_log_target tvm_objs tvm_runtime_objs tvm_libinfo_objs tvm_compiler tvm_runtime)
++    if(TARGET ${_tvm_log_target})
++      target_compile_definitions(${_tvm_log_target} PUBLIC TVM_LOG_CUSTOMIZE=1)
++    endif()
++  endforeach()
+ endif()

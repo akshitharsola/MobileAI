@@ -1,0 +1,81 @@
+diff --git a/android/mlc4j/CMakeLists.txt b/android/mlc4j/CMakeLists.txt
+index 40f76f5a..69b632a5 100644
+--- a/android/mlc4j/CMakeLists.txt
++++ b/android/mlc4j/CMakeLists.txt
+@@ -41,10 +41,22 @@ add_custom_command(
+   COMMAND ${CMAKE_COMMAND} -E copy ${JNI_HEADER}/org_apache_tvm_LibInfo.h
+           ${JNI_HEADER}/org_apache_tvm_native_c_api.h)
+ 
++# Create an empty placeholder if no pre-compiled model library exists
++set(MODEL_ANDROID_LIB ${ANDROID_BIN_DIR}/lib/libmodel_android.a)
++if(NOT EXISTS ${MODEL_ANDROID_LIB})
++  file(MAKE_DIRECTORY ${ANDROID_BIN_DIR}/lib)
++  execute_process(
++    COMMAND ${CMAKE_AR} rcs ${MODEL_ANDROID_LIB}
++    RESULT_VARIABLE AR_RESULT)
++  if(NOT AR_RESULT EQUAL 0)
++    # Fallback: use llvm-ar from NDK
++    set(LLVM_AR ${ANDROID_TOOLCHAIN_ROOT}/bin/llvm-ar)
++    execute_process(COMMAND ${LLVM_AR} rcs ${MODEL_ANDROID_LIB})
++  endif()
++endif()
+ add_library(model_android STATIC IMPORTED)
+ set_target_properties(
+-  model_android PROPERTIES IMPORTED_LOCATION
+-                           ${ANDROID_BIN_DIR}/lib/libmodel_android.a)
++  model_android PROPERTIES IMPORTED_LOCATION ${MODEL_ANDROID_LIB})
+ 
+ add_library(
+   tvm4j_runtime_packed SHARED
+diff --git a/android/mlc4j/prepare_libs.py b/android/mlc4j/prepare_libs.py
+index 0c66dd77..cdaf4bdf 100644
+--- a/android/mlc4j/prepare_libs.py
++++ b/android/mlc4j/prepare_libs.py
+@@ -7,9 +7,10 @@ import subprocess
+ import sys
+ from pathlib import Path
+ 
+-from mlc_llm.support import logging
++import logging as logging
+ 
+-logging.enable_logging()
++logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
++logging.enable_logging = lambda: None
+ logger = logging.getLogger(__name__)
+ 
+ 
+diff --git a/android/mlc4j/src/cpp/tvm_runtime.h b/android/mlc4j/src/cpp/tvm_runtime.h
+index 26051d13..0ec59121 100644
+--- a/android/mlc4j/src/cpp/tvm_runtime.h
++++ b/android/mlc4j/src/cpp/tvm_runtime.h
+@@ -2,6 +2,7 @@
+ 
+ #include <android/log.h>
+ #include <dlfcn.h>
++#include <tvm/ffi/error.h>
+ #include <tvm/runtime/logging.h>
+ 
+ #include <ffi/backtrace.cc>
+@@ -28,8 +29,6 @@
+ #include <runtime/opencl/opencl_device_api.cc>
+ #include <runtime/opencl/opencl_module.cc>
+ #include <runtime/opencl/opencl_wrapper/opencl_wrapper.cc>
+-#include <runtime/profiling.cc>
+-#include <runtime/source_utils.cc>
+ #include <runtime/tensor.cc>
+ #include <runtime/thread_pool.cc>
+ #include <runtime/threading_backend.cc>
+@@ -49,11 +48,11 @@ static_assert(TVM_LOG_CUSTOMIZE == 1, "TVM_LOG_CUSTOMIZE must be 1");
+ namespace tvm {
+ namespace runtime {
+ namespace detail {
+-// Override logging mechanism
++// Override logging mechanism (adapted for tvm-ffi Error API)
+ [[noreturn]] void LogFatalImpl(const std::string& file, int lineno, const std::string& message) {
+   std::string m = file + ":" + std::to_string(lineno) + ": " + message;
+   __android_log_write(ANDROID_LOG_FATAL, "TVM_RUNTIME", m.c_str());
+-  throw InternalError(file, lineno, message);
++  throw ::tvm::ffi::Error("InternalError", message, "");
+ }
+ void LogMessageImpl(const std::string& file, int lineno, int level, const std::string& message) {
+   std::string m = file + ":" + std::to_string(lineno) + ": " + message;
