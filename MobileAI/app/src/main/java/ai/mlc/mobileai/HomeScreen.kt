@@ -51,7 +51,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             StatusCard(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
-                value = if (isLoaded) modelName else "No model loaded",
+                value = if (isLoaded) modelName.substringBefore("-q4f") else "Tap 'Load Model' to start",
                 ok = isLoaded
             )
 
@@ -89,12 +89,14 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     Text("Models")
                 }
                 Button(
-                    onClick = { navController.navigate("chat") },
-                    enabled = isLoaded,
+                    onClick = {
+                        if (isLoaded) navController.navigate("chat")
+                        else navController.navigate("models")
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
-                    Text("Chat")
+                    Text(if (isLoaded) "Chat" else "Load Model")
                 }
             }
 

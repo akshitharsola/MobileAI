@@ -43,6 +43,15 @@ class MainActivity : ComponentActivity() {
             service.chatState = chatState
             clipboardMonitor = ClipboardMonitor(this@MainActivity, service)
             clipboardMonitor?.start()
+            // Auto-start API server and Telegram bot if token is saved
+            val prefs = getSharedPreferences("mobileai", MODE_PRIVATE)
+            if (service.apiServer == null) {
+                service.startApiServer(prefs.getInt("api_port", 8080))
+            }
+            val token = prefs.getString("bot_token", "") ?: ""
+            if (token.isNotBlank() && service.telegramPoller == null) {
+                service.startTelegramPoller(token)
+            }
         }
         override fun onServiceDisconnected(name: ComponentName) {
             inferenceService = null

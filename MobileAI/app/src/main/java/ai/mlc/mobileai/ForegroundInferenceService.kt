@@ -70,7 +70,10 @@ class ForegroundInferenceService : Service() {
     }
 
     fun isModelLoaded(): Boolean = chatState?.chatable() == true
-    fun loadedModelName(): String = chatState?.modelName?.value ?: "none"
+    fun loadedModelName(): String {
+        val name = chatState?.modelName?.value ?: ""
+        return if (name.isBlank()) "none" else name
+    }
 
     private fun updateNotification(text: String) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
