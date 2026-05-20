@@ -98,24 +98,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadAppConfig() {
-        // Always load the bundled config from assets as the source of truth.
-        // External storage may have a stale config from a previous install.
+        // Always use the bundled assets config as source of truth.
+        // Delete any stale external config that may survive an over-install.
         val appConfigFile = File(appDirFile, AppConfigFilename)
+        appConfigFile.delete()
         val bundledJson = application.assets.open(AppConfigFilename).bufferedReader().use { it.readText() }
-        val bundledConfig = gson.fromJson(bundledJson, AppConfig::class.java)
-        // Merge in any user-added models from external storage (not in the bundled list).
-        val jsonString: String = if (appConfigFile.exists()) {
-            val externalConfig = gson.fromJson(appConfigFile.readText(), AppConfig::class.java)
-            val bundledIds = bundledConfig.modelList.map { it.modelId }.toSet()
-            val userAdded = externalConfig.modelList.filter { it.modelId !in bundledIds }
-            if (userAdded.isNotEmpty()) {
-                bundledConfig.modelList.addAll(userAdded)
-                gson.toJson(bundledConfig)
-            } else bundledJson
-        } else bundledJson
-        // Also overwrite external config so it matches bundled on next launch.
-        appConfigFile.parentFile?.mkdirs()
-        appConfigFile.writeText(bundledJson)
+        val jsonString = bundledJson
         appConfig = gson.fromJson(jsonString, AppConfig::class.java)
         appConfig.modelLibs = emptyList<String>().toMutableList()
         modelList.clear()
