@@ -99,29 +99,39 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                val apiRunning = service?.apiServer != null
                 OutlinedButton(
                     onClick = {
-                        val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
-                        val port = prefs.getInt("api_port", 8080)
-                        service?.startApiServer(port)
+                        if (apiRunning) {
+                            service?.apiServer?.stop()
+                            service?.apiServer = null
+                        } else {
+                            val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
+                            service?.startApiServer(prefs.getInt("api_port", 8080))
+                        }
                         appViewModel.updateRamUsage()
                     },
-                    enabled = service != null && service.apiServer == null,
+                    enabled = service != null,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Start API")
+                    Text(if (apiRunning) "Stop API" else "Start API")
                 }
+                val botRunning = service?.telegramPoller != null
                 OutlinedButton(
                     onClick = {
-                        val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
-                        val token = prefs.getString("bot_token", "") ?: ""
-                        if (token.isNotBlank()) service?.startTelegramPoller(token)
+                        if (botRunning) {
+                            service?.stopTelegramPoller()
+                        } else {
+                            val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
+                            val token = prefs.getString("bot_token", "") ?: ""
+                            if (token.isNotBlank()) service?.startTelegramPoller(token)
+                        }
                         appViewModel.updateRamUsage()
                     },
-                    enabled = service != null && service.telegramPoller == null,
+                    enabled = service != null,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Start Bot")
+                    Text(if (botRunning) "Stop Bot" else "Start Bot")
                 }
             }
 

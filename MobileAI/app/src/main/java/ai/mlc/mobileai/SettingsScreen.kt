@@ -25,6 +25,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
     var contextLen by remember { mutableStateOf(prefs.getInt("context_len", 2048).toString()) }
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
+    val service = activity.getInferenceService()
 
     Scaffold(
         topBar = {
@@ -86,15 +87,24 @@ fun SettingsScreen(navController: NavController, activity: MainActivity) {
 
             Button(
                 onClick = {
+                    val newToken = botToken.trim()
+                    val newPort = apiPort.toIntOrNull() ?: 8080
                     prefs.edit()
-                        .putString("bot_token", botToken.trim())
-                        .putInt("api_port", apiPort.toIntOrNull() ?: 8080)
+                        .putString("bot_token", newToken)
+                        .putInt("api_port", newPort)
                         .putInt("context_len", contextLen.toIntOrNull() ?: 2048)
                         .apply()
-                    savedMsg = "Settings saved"
+                    // Restart bot immediately if token changed and service is bound
+                    if (newToken.isNotBlank() && service != null) {
+                        service.stopTelegramPoller()
+                        service.startTelegramPoller(newToken)
+                        savedMsg = "Settings saved — Telegram bot restarted"
+                    } else {
+                        savedMsg = "Settings saved"
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Save Settings") }
+            ) { Text("Save & Apply") }
 
             if (savedMsg.isNotEmpty()) {
                 Text(savedMsg, color = MaterialTheme.colorScheme.primary)
