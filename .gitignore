@@ -1,0 +1,11 @@
+# Ignore mlc-llm native build artifacts (large)
+mlc-llm/build/
+mlc-llm/android/mlc4j/output/
+mlc-llm/android/mlc4j/build/
+mlc-llm/android/MLCChat/app/build/
+mlc-llm/android/MLCChat/dist/
+# Keep MobileAI source
+!MobileAI/
+.DS_Store
+__pycache__/
+*.pyc

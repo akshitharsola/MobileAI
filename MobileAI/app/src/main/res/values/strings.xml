@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MobileAI</string>
+    <string name="channel_name">MobileAI Inference</string>
+    <string name="channel_desc">Persistent LLM inference service</string>
+</resources>

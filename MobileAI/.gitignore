@@ -1,0 +1,13 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build/
+# Keep APK when present
+!app/build/outputs/apk/

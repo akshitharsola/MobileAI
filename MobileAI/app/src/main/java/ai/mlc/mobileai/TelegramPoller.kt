@@ -1,0 +1,101 @@
+package ai.mlc.mobileai
+
+import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+
+private data class TgUpdate(
+    @SerializedName("update_id") val updateId: Long,
+    val message: TgMessage? = null
+)
+private data class TgMessage(
+    @SerializedName("message_id") val messageId: Long,
+    val text: String? = null,
+    val chat: TgChat
+)
+private data class TgChat(val id: Long)
+private data class TgGetUpdatesResponse(val ok: Boolean, val result: List<TgUpdate> = emptyList())
+private data class TgSendMessage(
+    @SerializedName("chat_id") val chatId: Long,
+    val text: String
+)
+
+class TelegramPoller(
+    private val botToken: String,
+    private val onPrompt: (String) -> String
+) {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(35, TimeUnit.SECONDS)
+        .build()
+    private val gson = Gson()
+    private val baseUrl = "https://api.telegram.org/bot$botToken"
+    private var offset = 0L
+    private var running = false
+    private var job: Job? = null
+
+    fun start() {
+        running = true
+        job = CoroutineScope(Dispatchers.IO).launch {
+            while (running) {
+                try {
+                    poll()
+                } catch (e: Exception) {
+                    Log.e("TelegramPoller", "Poll error: ${e.message}")
+                    delay(5000)
+                }
+            }
+        }
+    }
+
+    fun stop() {
+        running = false
+        job?.cancel()
+    }
+
+    private fun poll() {
+        val url = "$baseUrl/getUpdates?timeout=25&offset=$offset"
+        val req = Request.Builder().url(url).build()
+        val resp = client.newCall(req).execute()
+        val body = resp.body?.string() ?: return
+        val updates = gson.fromJson(body, TgGetUpdatesResponse::class.java)
+        if (!updates.ok) return
+
+        for (update in updates.result) {
+            offset = update.updateId + 1
+            val msg = update.message ?: continue
+            val text = msg.text ?: continue
+            handleMessage(msg.chat.id, text)
+        }
+    }
+
+    private fun handleMessage(chatId: Long, text: String) {
+        when {
+            text == "/start" -> sendMessage(chatId, "MobileAI is running. Send me any prompt and I'll run it through the local model.")
+            text == "/status" -> sendMessage(chatId, "Bot is online. Send /model to check the loaded model.")
+            text.startsWith("/model") -> sendMessage(chatId, "Current model will be shown in the app's Home screen.")
+            else -> {
+                sendMessage(chatId, "Processing…")
+                val response = try { onPrompt(text) } catch (e: Exception) { "Error: ${e.message}" }
+                sendMessage(chatId, response)
+            }
+        }
+    }
+
+    private fun sendMessage(chatId: Long, text: String) {
+        try {
+            val payload = gson.toJson(TgSendMessage(chatId, text))
+            val body = payload.toRequestBody("application/json".toMediaType())
+            val req = Request.Builder().url("$baseUrl/sendMessage").post(body).build()
+            client.newCall(req).execute().close()
+        } catch (e: Exception) {
+            Log.e("TelegramPoller", "Send error: ${e.message}")
+        }
+    }
+}
