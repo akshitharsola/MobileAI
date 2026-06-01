@@ -15,11 +15,31 @@ import kotlinx.coroutines.runBlocking
 data class ChatRequest(
     val prompt: String = "",
     val max_tokens: Int = 512,
-    val model: String? = null   // optional: "1.7b", "4b", or full model ID
+    val model: String? = null
 )
 data class ChatResponse(val response: String, val model: String)
 data class HealthResponse(val status: String, val model: String, val loaded: Boolean)
 data class ModelInfo(val id: String, val loaded: Boolean)
+
+// OpenAI-compatible types
+data class OaiMessage(val role: String, val content: String)
+data class OaiChatRequest(
+    val model: String? = null,
+    val messages: List<OaiMessage> = emptyList(),
+    val max_tokens: Int = 512,
+    val stream: Boolean = false
+)
+data class OaiChoice(val index: Int, val message: OaiMessage, val finish_reason: String)
+data class OaiUsage(val prompt_tokens: Int, val completion_tokens: Int, val total_tokens: Int)
+data class OaiChatResponse(
+    val id: String,
+    val `object`: String = "chat.completion",
+    val model: String,
+    val choices: List<OaiChoice>,
+    val usage: OaiUsage
+)
+data class OaiModelEntry(val id: String, val `object`: String = "model")
+data class OaiModelList(val `object`: String = "list", val data: List<OaiModelEntry>)
 
 class ApiServer(
     private val service: ForegroundInferenceService,
@@ -81,6 +101,56 @@ class ApiServer(
                     val response = service.generateBlocking(req.prompt, req.max_tokens, req.model)
                     val resp = ChatResponse(response = response, model = service.loadedModelName())
                     call.respondText(gson.toJson(resp), ContentType.Application.Json)
+                }
+
+                get("/v1/models") {
+                    val vm = service.appViewModel
+                    val models = if (vm != null) {
+                        vm.modelList.map { OaiModelEntry(id = it.modelConfig.modelId) }
+                    } else {
+                        listOf(OaiModelEntry(id = service.loadedModelName()))
+                    }
+                    call.respondText(gson.toJson(OaiModelList(data = models)), ContentType.Application.Json)
+                }
+
+                post("/v1/chat/completions") {
+                    val body = call.receiveText()
+                    val req = try { gson.fromJson(body, OaiChatRequest::class.java) } catch (e: Exception) { OaiChatRequest() }
+                    if (req.messages.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, "messages array is required")
+                        return@post
+                    }
+                    val prompt = req.messages.joinToString("\n") { msg ->
+                        when (msg.role) {
+                            "system" -> "System: ${msg.content}"
+                            "user" -> "User: ${msg.content}"
+                            "assistant" -> "Assistant: ${msg.content}"
+                            else -> msg.content
+                        }
+                    } + "\nAssistant:"
+
+                    val response = service.generateBlocking(prompt, req.max_tokens.coerceAtMost(4096), req.model)
+                    val modelName = service.loadedModelName()
+                    val promptTokens = prompt.length / 4
+                    val completionTokens = response.length / 4
+
+                    val oaiResp = OaiChatResponse(
+                        id = "chatcmpl-${java.util.UUID.randomUUID()}",
+                        model = modelName,
+                        choices = listOf(
+                            OaiChoice(
+                                index = 0,
+                                message = OaiMessage(role = "assistant", content = response),
+                                finish_reason = "stop"
+                            )
+                        ),
+                        usage = OaiUsage(
+                            prompt_tokens = promptTokens,
+                            completion_tokens = completionTokens,
+                            total_tokens = promptTokens + completionTokens
+                        )
+                    )
+                    call.respondText(gson.toJson(oaiResp), ContentType.Application.Json)
                 }
             }
         }.start(wait = false)

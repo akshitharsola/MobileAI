@@ -45,14 +45,16 @@ class MainActivity : ComponentActivity() {
             service.appViewModel = appViewModelRef
             clipboardMonitor = ClipboardMonitor(this@MainActivity, service)
             clipboardMonitor?.start()
-            // Auto-start API server and Telegram bot if token is saved
             val prefs = getSharedPreferences("mobileai", MODE_PRIVATE)
-            if (service.apiServer == null) {
-                service.startApiServer(prefs.getInt("api_port", 8080))
-            }
-            val token = prefs.getString("bot_token", "") ?: ""
-            if (token.isNotBlank() && service.telegramPoller == null) {
-                service.startTelegramPoller(token)
+            val serviceEnabled = prefs.getBoolean("service_enabled", true)
+            if (serviceEnabled) {
+                if (service.apiServer == null) {
+                    service.startApiServer(prefs.getInt("api_port", 8080))
+                }
+                val token = prefs.getString("bot_token", "") ?: ""
+                if (token.isNotBlank() && service.telegramPoller == null) {
+                    service.startTelegramPoller(token)
+                }
             }
         }
         override fun onServiceDisconnected(name: ComponentName) {
@@ -82,6 +84,9 @@ class MainActivity : ComponentActivity() {
         appViewModelRef = appViewModel
         chatState = appViewModel.chatState
         requestNeededPermissions()
+        // Re-enable service auto-start for next session (cleared on deliberate shutdown)
+        getSharedPreferences("mobileai", MODE_PRIVATE)
+            .edit().putBoolean("service_enabled", true).apply()
         startAndBindService()
         setContent {
             MobileAITheme {
@@ -134,4 +139,9 @@ class MainActivity : ComponentActivity() {
     }
 
     fun getInferenceService(): ForegroundInferenceService? = inferenceService
+
+    fun shutdownAndFinish() {
+        inferenceService?.shutdown()
+        finish()
+    }
 }

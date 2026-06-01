@@ -52,6 +52,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
+    val systemMonitor = SystemMonitor(application)
+    val inferenceStats = mutableStateOf(InferenceStats())
 
     companion object {
         const val AppConfigFilename = "mlc-app-config.json"
@@ -63,6 +65,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadAppConfig()
         updateRamUsage()
+        systemMonitor.start()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        systemMonitor.stop()
     }
 
     fun updateRamUsage() {
@@ -491,7 +499,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             executorService.submit {
                 historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = content))
-                scope.launch {
+                scope.launch(Dispatchers.Default) {
                     val responses = engine.chat.completions.create(
                         messages = historyMessages,
                         stream_options = OpenAIProtocol.StreamOptions(include_usage = true)
@@ -499,22 +507,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     var streaming = ""
                     var truncated = false
                     for (res in responses) {
-                        if (!callBackend {
+                        val ok = try {
                             for (choice in res.choices) {
                                 choice.delta.content?.let { streaming += it.asText() }
                                 if (choice.finish_reason == "length") truncated = true
                             }
-                            updateMessage(MessageRole.Assistant, streaming)
-                            res.usage?.let { report.value = it.extra?.asTextLabel() ?: "" }
-                            if (truncated) updateMessage(MessageRole.Assistant, "$streaming [truncated]")
-                        }) return@launch
+                            if (truncated) streaming += " [truncated]"
+                            true
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                appendMessage(MessageRole.Assistant, "Error: ${e.localizedMessage}")
+                                switchToFailed()
+                            }
+                            false
+                        }
+                        if (!ok) return@launch
+                        withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, streaming) }
+                        res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
                     }
                     if (streaming.isNotEmpty()) {
                         historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = streaming))
                     } else {
                         if (historyMessages.isNotEmpty()) historyMessages.removeAt(historyMessages.size - 1)
                     }
-                    if (modelChatState.value == ModelChatState.Generating) switchToReady()
+                    withContext(Dispatchers.Main) {
+                        if (modelChatState.value == ModelChatState.Generating) switchToReady()
+                    }
                 }
             }
         }
@@ -522,17 +540,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Used by ForegroundInferenceService for headless inference
         suspend fun generateResponse(prompt: String, maxTokens: Int = 512): String {
             if (!chatable()) return "Model not ready"
-            val messages = listOf(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = prompt))
+            val msgs = listOf(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = prompt))
             val result = StringBuilder()
+            var firstTokenMs = 0L
+            val startMs = System.currentTimeMillis()
+            var completionTokenCount = 0
+
             val responses = engine.chat.completions.create(
-                messages = messages,
+                messages = msgs,
                 max_tokens = maxTokens,
                 stream_options = OpenAIProtocol.StreamOptions(include_usage = false)
             )
             for (res in responses) {
                 for (choice in res.choices) {
-                    choice.delta.content?.let { result.append(it.asText()) }
+                    choice.delta.content?.let {
+                        if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
+                        result.append(it.asText())
+                        completionTokenCount++
+                    }
                 }
+            }
+            val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
+            val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
+            scope.launch {
+                this@AppViewModel.inferenceStats.value = InferenceStats(
+                    tokensPerSecond = tps,
+                    promptTokens = msgs.sumOf { it.content.toString().length / 4 },
+                    completionTokens = completionTokenCount,
+                    timeToFirstTokenMs = firstTokenMs,
+                    lastRequestMs = System.currentTimeMillis()
+                )
             }
             return result.toString().trim()
         }
@@ -572,3 +609,10 @@ data class ModelConfig(
 )
 data class ParamsRecord(@SerializedName("dataPath") val dataPath: String)
 data class ParamsConfig(@SerializedName("records") val paramsRecords: List<ParamsRecord>)
+data class InferenceStats(
+    val tokensPerSecond: Float = 0f,
+    val promptTokens: Int = 0,
+    val completionTokens: Int = 0,
+    val timeToFirstTokenMs: Long = 0L,
+    val lastRequestMs: Long = 0L
+)

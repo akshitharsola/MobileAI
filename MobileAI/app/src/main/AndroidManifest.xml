@@ -66,6 +66,14 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".ShutdownReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="ai.mlc.mobileai.SHUTDOWN" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

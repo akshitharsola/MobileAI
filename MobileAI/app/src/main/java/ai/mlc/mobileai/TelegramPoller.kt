@@ -79,7 +79,7 @@ class TelegramPoller(
         when {
             text == "/start" -> sendMessage(chatId,
                 "Localis is running.\n\nSend any prompt for inference.\n\n" +
-                "Commands:\n/status — show active model\n/model 1.7b — switch to Qwen3-1.7B\n/model 4b — switch to Qwen3-4B"
+                "Commands:\n/status — show active model\n/model 1.7b — switch to Qwen3-1.7B\n/model 4b — switch to Qwen3-4B\n/ip — show phone IP"
             )
             text == "/status" -> {
                 val loaded = service.isModelLoaded()
@@ -103,6 +103,21 @@ class TelegramPoller(
             text == "/model" -> sendMessage(chatId,
                 "Current: ${service.loadedModelName()}\n\nSwitch with:\n/model 1.7b\n/model 4b"
             )
+            text == "/ip" -> {
+                val ip = try {
+                    var found = ""
+                    for (iface in java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                        if (!iface.isUp || iface.isLoopback) continue
+                        for (addr in java.util.Collections.list(iface.inetAddresses)) {
+                            if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                                found = addr.hostAddress ?: ""
+                            }
+                        }
+                    }
+                    if (found.isNotEmpty()) found else "unknown"
+                } catch (e: Exception) { "error: ${e.message}" }
+                sendMessage(chatId, "Phone IP: $ip\n\nTo update VM config: /ip $ip")
+            }
             else -> {
                 sendMessage(chatId, "⏳ Processing…")
                 val response = try {

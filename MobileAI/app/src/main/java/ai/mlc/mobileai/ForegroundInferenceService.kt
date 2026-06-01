@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 
 class ForegroundInferenceService : Service() {
 
@@ -36,6 +38,10 @@ class ForegroundInferenceService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ShutdownReceiver.ACTION_SHUTDOWN) {
+            shutdown()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
@@ -44,6 +50,25 @@ class ForegroundInferenceService : Service() {
         apiServer?.stop()
         telegramPoller?.stop()
         super.onDestroy()
+    }
+
+    fun shutdown() {
+        getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            .edit().putBoolean("service_enabled", false).apply()
+        chatState?.let { state ->
+            if (state.interruptable()) state.requestTerminateChat {}
+        }
+        apiServer?.stop()
+        apiServer = null
+        telegramPoller?.stop()
+        telegramPoller = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
     }
 
     fun startApiServer(port: Int) {
@@ -125,7 +150,19 @@ class ForegroundInferenceService : Service() {
     suspend fun generateBlocking(prompt: String, maxTokens: Int = 512, modelId: String? = null): String {
         val resolved = if (modelId != null) resolveModelId(modelId) else null
         if (!ensureModelLoaded(resolved)) return "No model loaded. Download a model first."
-        return chatState?.generateResponse(prompt, maxTokens) ?: "No model loaded"
+        val cappedTokens = maxTokens.coerceAtMost(4096)
+        return try {
+            withTimeout(120_000L) {
+                withContext(Dispatchers.IO) {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                    val result = chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
+                    result
+                }
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            "Request timed out after 120 seconds."
+        }
     }
 
     // Resolve short names like "1.7b" → full model ID
@@ -154,14 +191,24 @@ class ForegroundInferenceService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val openIntent = Intent(this, MainActivity::class.java)
+        val openPi = PendingIntent.getActivity(this, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        val shutdownIntent = Intent(this, ShutdownReceiver::class.java).apply {
+            action = ShutdownReceiver.ACTION_SHUTDOWN
+        }
+        val shutdownPi = PendingIntent.getBroadcast(
+            this, 1, shutdownIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Localis")
             .setContentText(text)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentIntent(pi)
+            .setContentIntent(openPi)
             .setOngoing(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Shut Down", shutdownPi)
             .build()
     }
 

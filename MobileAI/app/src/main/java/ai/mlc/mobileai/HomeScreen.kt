@@ -1,5 +1,6 @@
 package ai.mlc.mobileai
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,8 +27,11 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val modelList = appViewModel.modelList
     val service = activity.getInferenceService()
     var offloading by remember { mutableStateOf(false) }
+    val systemStats by appViewModel.systemMonitor.stats.collectAsState()
+    val inferenceStats = appViewModel.inferenceStats.value
+    var showShutdownDialog by remember { mutableStateOf(false) }
 
-    // Poll RAM every 3s so it stays current without flickering on button press
+    // Poll RAM every 3s
     LaunchedEffect(Unit) {
         while (true) {
             appViewModel.updateRamUsage()
@@ -38,6 +42,22 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     // Clear offloading spinner once model is unloaded
     LaunchedEffect(isLoaded) {
         if (!isLoaded) offloading = false
+    }
+
+    if (showShutdownDialog) {
+        AlertDialog(
+            onDismissRequest = { showShutdownDialog = false },
+            title = { Text("Shut Down Localis?") },
+            text = { Text("This will stop the model, API server, and Telegram bot. The service will not restart until you open the app again.") },
+            confirmButton = {
+                TextButton(onClick = { activity.shutdownAndFinish() }) {
+                    Text("Shut Down", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showShutdownDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     Scaffold(
@@ -61,6 +81,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // ── System Status ──────────────────────────────────────────────
             Text("System Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
             StatusCard(
@@ -81,6 +102,29 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ok = ramUsed < ramTotal * 0.85
             )
 
+            val cpuPct = systemStats.cpuPercent
+            StatusCard(
+                icon = Icons.Outlined.Speed,
+                title = "CPU",
+                value = "%.0f%% used".format(cpuPct),
+                ok = cpuPct < 90f
+            )
+
+            if (systemStats.thermalAvailable) {
+                val headroom = systemStats.thermalHeadroom
+                val thermalLabel = when {
+                    headroom > 0.6f -> "Normal"
+                    headroom > 0.2f -> "Warm (%.0f%% headroom)".format(headroom * 100)
+                    else -> "Throttling!"
+                }
+                StatusCard(
+                    icon = Icons.Outlined.Thermostat,
+                    title = "Thermal",
+                    value = thermalLabel,
+                    ok = headroom > 0.2f
+                )
+            }
+
             StatusCard(
                 icon = Icons.Outlined.Cloud,
                 title = "API Server",
@@ -95,7 +139,33 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ok = service?.telegramPoller != null
             )
 
-            // Model selector — only show if models are downloaded
+            // ── Last Inference Stats ───────────────────────────────────────
+            if (inferenceStats.lastRequestMs > 0L) {
+                HorizontalDivider()
+                Text("Last Inference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val secsAgo = (System.currentTimeMillis() - inferenceStats.lastRequestMs) / 1000
+                        Text(
+                            "%.1f tokens/sec".format(inferenceStats.tokensPerSecond),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Prompt: ${inferenceStats.promptTokens} tok  •  Completion: ${inferenceStats.completionTokens} tok",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "First token: ${inferenceStats.timeToFirstTokenMs}ms  •  ${secsAgo}s ago",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // ── Model Selector ─────────────────────────────────────────────
             val downloadedModels = modelList.filter { it.modelInitState.value == ModelInitState.Finished }
             if (downloadedModels.isNotEmpty()) {
                 HorizontalDivider()
@@ -103,7 +173,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
 
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // One row per model
                         downloadedModels.forEach { m ->
                             val shortName = m.modelConfig.modelId.substringBefore("-q4f")
                             val vram = m.estimatedVramGB()
@@ -112,7 +181,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                // Active indicator dot
                                 Icon(
                                     if (isActive) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
                                     null,
@@ -125,7 +193,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                                     Text("~${vram}GB VRAM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (isActive) {
-                                    // Offload button
                                     OutlinedButton(
                                         onClick = {
                                             offloading = true
@@ -143,7 +210,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                                         }
                                     }
                                 } else {
-                                    // Load button
                                     Button(
                                         onClick = { m.startChat() },
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
@@ -157,6 +223,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 }
             }
 
+            // ── Quick Actions ──────────────────────────────────────────────
             HorizontalDivider()
             Text("Quick Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
@@ -213,6 +280,16 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ) {
                     Text(if (botRunning) "Stop Bot" else "Start Bot")
                 }
+            }
+
+            OutlinedButton(
+                onClick = { showShutdownDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Filled.PowerSettingsNew, null, modifier = Modifier.padding(end = 4.dp))
+                Text("Shut Down")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
