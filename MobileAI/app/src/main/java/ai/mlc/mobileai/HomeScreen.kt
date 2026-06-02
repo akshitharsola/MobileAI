@@ -106,22 +106,22 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             StatusCard(
                 icon = Icons.Outlined.Speed,
                 title = "CPU",
-                value = "%.0f%% used".format(cpuPct),
+                value = if (cpuPct < 0f) "Measuring…" else "%.0f%% used".format(cpuPct),
                 ok = cpuPct < 90f
             )
 
             if (systemStats.thermalAvailable) {
                 val headroom = systemStats.thermalHeadroom
                 val thermalLabel = when {
-                    headroom > 0.6f -> "Normal"
-                    headroom > 0.2f -> "Warm (%.0f%% headroom)".format(headroom * 100)
+                    headroom > 0.5f -> "Normal (%.0f%% headroom)".format(headroom * 100)
+                    headroom > 0.15f -> "Warm (%.0f%% headroom)".format(headroom * 100)
                     else -> "Throttling!"
                 }
                 StatusCard(
                     icon = Icons.Outlined.Thermostat,
                     title = "Thermal",
                     value = thermalLabel,
-                    ok = headroom > 0.2f
+                    ok = headroom > 0.15f
                 )
             }
 

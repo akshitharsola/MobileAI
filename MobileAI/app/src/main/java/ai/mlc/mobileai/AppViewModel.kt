@@ -102,7 +102,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestDeleteModel(modelId: String) {
         deleteModel(modelId)
-        issueAlert("Model: $modelId has been deleted")
     }
 
     private fun loadAppConfig() {

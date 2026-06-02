@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 data class SystemStats(
-    val cpuPercent: Float = 0f,
+    val cpuPercent: Float = -1f,  // -1 = first poll / measuring
     val thermalHeadroom: Float = 1f,
     val thermalAvailable: Boolean = false
 )
@@ -25,6 +25,9 @@ class SystemMonitor(private val context: Context) {
 
     fun start() {
         scope.launch {
+            // Prime the baseline on first read (result discarded — always 0)
+            readCpuPercent()
+            delay(2000)
             while (true) {
                 _stats.value = SystemStats(
                     cpuPercent = readCpuPercent(),
