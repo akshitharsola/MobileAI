@@ -104,19 +104,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         deleteModel(modelId)
     }
 
+    private fun getDeletedModelIds(): MutableSet<String> {
+        val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+        return prefs.getStringSet("deleted_model_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+    }
+
+    private fun persistDeletedModelId(modelId: String) {
+        val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+        val deleted = getDeletedModelIds()
+        deleted.add(modelId)
+        prefs.edit().putStringSet("deleted_model_ids", deleted).apply()
+    }
+
     private fun loadAppConfig() {
         // Always use the bundled assets config as source of truth.
-        // Delete any stale external config that may survive an over-install.
         val appConfigFile = File(appDirFile, AppConfigFilename)
         appConfigFile.delete()
         val bundledJson = application.assets.open(AppConfigFilename).bufferedReader().use { it.readText() }
-        val jsonString = bundledJson
-        appConfig = gson.fromJson(jsonString, AppConfig::class.java)
+        appConfig = gson.fromJson(bundledJson, AppConfig::class.java)
         appConfig.modelLibs = emptyList<String>().toMutableList()
         modelList.clear()
         modelIdSet.clear()
         modelSampleList.clear()
+        val deletedIds = getDeletedModelIds()
         for (modelRecord in appConfig.modelList) {
+            // Skip models the user explicitly deleted
+            if (deletedIds.contains(modelRecord.modelId)) continue
             appConfig.modelLibs.add(modelRecord.modelLib)
             val modelDirFile = File(appDirFile, modelRecord.modelId)
             val modelConfigFile = File(modelDirFile, ModelConfigFilename)
@@ -165,6 +178,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         modelIdSet.remove(modelId)
         modelList.removeIf { it.modelConfig.modelId == modelId }
         updateAppConfig { appConfig.modelList.removeIf { it.modelId == modelId } }
+        persistDeletedModelId(modelId)
     }
 
     private fun isModelConfigAllowed(modelConfig: ModelConfig): Boolean {
@@ -252,7 +266,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        fun handleStart() { switchToDownloading() }
+        fun handleStart() {
+            // Remove from deleted set so it persists after next restart
+            val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            val deleted = getDeletedModelIds()
+            deleted.remove(modelConfig.modelId)
+            prefs.edit().putStringSet("deleted_model_ids", deleted).apply()
+            switchToDownloading()
+        }
         fun handlePause() { switchToPausing() }
 
         fun handleClear() {
@@ -525,8 +546,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (!ok) return@launch
                         withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, streaming) }
                         res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
-                        // Yield every token so the OS can schedule UI/system work
+                        // Yield every token; add extra delay if CPU is over 70% to keep phone responsive
                         yield()
+                        val cpu = systemMonitor.stats.value.cpuPercent
+                        if (cpu > 70f) delay(50) else if (cpu > 50f) delay(20)
                     }
                     if (streaming.isNotEmpty()) {
                         historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = streaming))

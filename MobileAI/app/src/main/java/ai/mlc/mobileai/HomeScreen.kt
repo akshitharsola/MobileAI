@@ -1,6 +1,7 @@
 package ai.mlc.mobileai
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,8 +10,14 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +37,15 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val systemStats by appViewModel.systemMonitor.stats.collectAsState()
     val inferenceStats = appViewModel.inferenceStats.value
     var showShutdownDialog by remember { mutableStateOf(false) }
+
+    // Keep last 30 CPU samples (~60s of history at 2s polling)
+    val cpuHistory = remember { mutableStateListOf<Float>() }
+    LaunchedEffect(systemStats.cpuPercent) {
+        if (systemStats.cpuPercent >= 0f) {
+            cpuHistory.add(systemStats.cpuPercent)
+            if (cpuHistory.size > 30) cpuHistory.removeAt(0)
+        }
+    }
 
     // Poll RAM every 3s
     LaunchedEffect(Unit) {
@@ -102,28 +118,13 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ok = ramUsed < ramTotal * 0.85
             )
 
-            val cpuPct = systemStats.cpuPercent
-            StatusCard(
-                icon = Icons.Outlined.Speed,
-                title = "CPU",
-                value = if (cpuPct < 0f) "Measuring…" else "%.0f%% used".format(cpuPct),
-                ok = cpuPct < 90f
+            // ── System Usage Graph Card ────────────────────────────────────
+            SystemUsageCard(
+                cpuPercent = systemStats.cpuPercent,
+                cpuHistory = cpuHistory,
+                thermalHeadroom = systemStats.thermalHeadroom,
+                thermalAvailable = systemStats.thermalAvailable
             )
-
-            if (systemStats.thermalAvailable) {
-                val headroom = systemStats.thermalHeadroom
-                val thermalLabel = when {
-                    headroom > 0.5f -> "Normal (%.0f%% headroom)".format(headroom * 100)
-                    headroom > 0.15f -> "Warm (%.0f%% headroom)".format(headroom * 100)
-                    else -> "Throttling!"
-                }
-                StatusCard(
-                    icon = Icons.Outlined.Thermostat,
-                    title = "Thermal",
-                    value = thermalLabel,
-                    ok = headroom > 0.15f
-                )
-            }
 
             StatusCard(
                 icon = Icons.Outlined.Cloud,
@@ -322,5 +323,103 @@ private fun StatusCard(icon: ImageVector, title: String, value: String, ok: Bool
                 tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
         }
+    }
+}
+
+@Composable
+private fun SystemUsageCard(
+    cpuPercent: Float,
+    cpuHistory: List<Float>,
+    thermalHeadroom: Float,
+    thermalAvailable: Boolean
+) {
+    val cpuColor = when {
+        cpuPercent > 75f -> MaterialTheme.colorScheme.error
+        cpuPercent > 50f -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val thermalColor = when {
+        thermalHeadroom < 0.15f -> MaterialTheme.colorScheme.error
+        thermalHeadroom < 0.5f -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val thermalLabel = when {
+        !thermalAvailable -> "N/A"
+        thermalHeadroom < 0.15f -> "Throttling!"
+        thermalHeadroom < 0.5f -> "Warm"
+        else -> "Normal"
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("System Usage", style = MaterialTheme.typography.labelMedium)
+
+            // CPU row with graph
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.Speed, null, tint = cpuColor, modifier = Modifier.size(20.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (cpuPercent < 0f) "CPU  Measuring…" else "CPU  %.0f%%".format(cpuPercent),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = cpuColor
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    CpuGraph(history = cpuHistory, lineColor = cpuColor)
+                }
+            }
+
+            HorizontalDivider(thickness = 0.5.dp)
+
+            // Thermal row
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Outlined.Thermostat, null, tint = thermalColor, modifier = Modifier.size(20.dp))
+                Text(
+                    if (thermalAvailable)
+                        "Thermal  $thermalLabel  (%.0f%% headroom)".format(thermalHeadroom * 100)
+                    else
+                        "Thermal  N/A (Android < 11)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = thermalColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CpuGraph(history: List<Float>, lineColor: Color) {
+    val gridColor = lineColor.copy(alpha = 0.15f)
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+    ) {
+        val w = size.width
+        val h = size.height
+        val maxSamples = 30
+
+        // Grid lines at 25%, 50%, 75%
+        listOf(0.25f, 0.5f, 0.75f).forEach { frac ->
+            val y = h - (frac * h)
+            drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+        }
+
+        if (history.size < 2) return@Canvas
+
+        val step = w / (maxSamples - 1).toFloat()
+        val startIdx = (maxSamples - history.size).coerceAtLeast(0)
+
+        val path = Path()
+        history.forEachIndexed { i, value ->
+            val x = (startIdx + i) * step
+            val y = h - (value / 100f * h).coerceIn(0f, h)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(path, color = lineColor, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
     }
 }
