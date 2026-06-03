@@ -499,6 +499,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             executorService.submit {
                 historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = content))
                 scope.launch(Dispatchers.Default) {
+                    // Deprioritize inference so UI/system threads stay responsive
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
                     val responses = engine.chat.completions.create(
                         messages = historyMessages,
                         stream_options = OpenAIProtocol.StreamOptions(include_usage = true)
@@ -523,6 +525,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (!ok) return@launch
                         withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, streaming) }
                         res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
+                        // Yield every token so the OS can schedule UI/system work
+                        yield()
                     }
                     if (streaming.isNotEmpty()) {
                         historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = streaming))

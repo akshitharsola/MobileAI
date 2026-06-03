@@ -152,16 +152,19 @@ class ForegroundInferenceService : Service() {
         if (!ensureModelLoaded(resolved)) return "No model loaded. Download a model first."
         val cappedTokens = maxTokens.coerceAtMost(4096)
         return try {
-            withTimeout(120_000L) {
+            withTimeout(180_000L) {
                 withContext(Dispatchers.IO) {
+                    // BACKGROUND priority: OS scheduler yields CPU to UI/system over inference
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                    // Brief yield before starting so any pending UI frames can render
+                    delay(50)
                     val result = chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
                     result
                 }
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            "Request timed out after 120 seconds."
+            "Request timed out after 180 seconds."
         }
     }
 
