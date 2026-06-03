@@ -53,6 +53,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
     val systemMonitor = SystemMonitor(application)
+    val thermalGovernor = ThermalGovernor(application)
     val inferenceStats = mutableStateOf(InferenceStats())
     val inferenceHistory = emptyList<InferenceStats>().toMutableStateList()
 
@@ -67,11 +68,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         loadAppConfig()
         updateRamUsage()
         systemMonitor.start()
+        thermalGovernor.start()
     }
 
     override fun onCleared() {
         super.onCleared()
         systemMonitor.stop()
+        thermalGovernor.stop()
     }
 
     fun updateRamUsage() {
@@ -554,10 +557,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (!ok) return@launch
                         withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, streaming) }
                         res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
-                        // Yield every token; add extra delay if CPU is over 70% to keep phone responsive
-                        yield()
-                        val cpu = systemMonitor.stats.value.cpuPercent
-                        if (cpu > 70f) delay(50) else if (cpu > 50f) delay(20)
+                        // Thermal-driven token pacing — gates GPU dispatch based on actual heat, not ghost CPU%
+                        when {
+                            this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
+                            this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
+                            else -> Thread.sleep(30)
+                        }
                     }
                     if (streaming.isNotEmpty()) {
                         historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = streaming))
@@ -605,6 +610,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         result.append(it.asText())
                         completionTokenCount++
                     }
+                }
+                // Thermal-driven token pacing for headless path
+                when {
+                    this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
+                    this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
+                    else -> Thread.sleep(30)
                 }
             }
             val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)

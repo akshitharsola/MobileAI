@@ -40,6 +40,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val service = activity.getInferenceService()
     var offloading by remember { mutableStateOf(false) }
     val systemStats by appViewModel.systemMonitor.stats.collectAsState()
+    val thermalInfo by appViewModel.thermalGovernor.state.collectAsState()
     val inferenceStats = appViewModel.inferenceStats.value
     val inferenceHistory = appViewModel.inferenceHistory
     var showShutdownDialog by remember { mutableStateOf(false) }
@@ -129,7 +130,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             SystemUsageCard(
                 cpuPercent = systemStats.cpuPercent,
                 cpuHistory = cpuHistory,
-                thermalHeadroom = systemStats.thermalHeadroom,
+                thermalInfo = thermalInfo,
                 thermalAvailable = systemStats.thermalAvailable
             )
 
@@ -322,7 +323,7 @@ private fun StatusCard(icon: ImageVector, title: String, value: String, ok: Bool
 private fun SystemUsageCard(
     cpuPercent: Float,
     cpuHistory: List<Float>,
-    thermalHeadroom: Float,
+    thermalInfo: ThermalInfo,
     thermalAvailable: Boolean
 ) {
     val cpuColor = when {
@@ -330,17 +331,22 @@ private fun SystemUsageCard(
         cpuPercent > 50f -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.primary
     }
-    val thermalColor = when {
-        thermalHeadroom < 0.15f -> MaterialTheme.colorScheme.error
-        thermalHeadroom < 0.5f -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
+    val thermalColor = when (thermalInfo.state) {
+        ThermalState.CRITICAL -> MaterialTheme.colorScheme.error
+        ThermalState.HOT      -> MaterialTheme.colorScheme.error
+        ThermalState.WARM     -> MaterialTheme.colorScheme.tertiary
+        ThermalState.COOL     -> MaterialTheme.colorScheme.primary
     }
     val thermalLabel = when {
         !thermalAvailable -> "N/A"
-        thermalHeadroom < 0.15f -> "Throttling!"
-        thermalHeadroom < 0.5f -> "Warm"
-        else -> "Normal"
+        else -> thermalInfo.state.name
     }
+    val limitTag = when {
+        thermalInfo.hardLimit -> "  [Hard Limit]"
+        thermalInfo.softLimit -> "  [Soft Limit]"
+        else -> ""
+    }
+    val sourceTag = if (thermalInfo.source == "Battery") "  via battery" else ""
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -370,7 +376,7 @@ private fun SystemUsageCard(
                 Icon(Icons.Outlined.Thermostat, null, tint = thermalColor, modifier = Modifier.size(20.dp))
                 Text(
                     if (thermalAvailable)
-                        "Thermal  $thermalLabel  (%.0f%% headroom)".format(thermalHeadroom * 100)
+                        "Thermal  $thermalLabel$limitTag  (%.0f%% headroom$sourceTag)".format(thermalInfo.headroom1s * 100)
                     else
                         "Thermal  N/A (Android < 11)",
                     style = MaterialTheme.typography.bodyMedium,

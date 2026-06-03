@@ -14,11 +14,20 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 
 class ForegroundInferenceService : Service() {
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Single-thread executor: guarantees one thread owns inference, so Thread.sleep() actually gates GPU dispatch
+    private val inferenceExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "localis-inference").apply {
+            priority = android.os.Process.THREAD_PRIORITY_BACKGROUND
+        }
+    }
+    private val inferenceDispatcher = inferenceExecutor.asCoroutineDispatcher()
 
     var chatState: AppViewModel.ChatState? = null
     var appViewModel: AppViewModel? = null
@@ -47,6 +56,7 @@ class ForegroundInferenceService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        inferenceExecutor.shutdown()
         apiServer?.stop()
         telegramPoller?.stop()
         super.onDestroy()
@@ -153,14 +163,10 @@ class ForegroundInferenceService : Service() {
         val cappedTokens = maxTokens.coerceAtMost(4096)
         return try {
             withTimeout(180_000L) {
-                withContext(Dispatchers.IO) {
-                    // BACKGROUND priority: OS scheduler yields CPU to UI/system over inference
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                withContext(inferenceDispatcher) {
                     // Brief yield before starting so any pending UI frames can render
                     delay(50)
-                    val result = chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
-                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DEFAULT)
-                    result
+                    chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
                 }
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
