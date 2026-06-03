@@ -155,7 +155,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
 
             Divider()
             Text(
-                "About\n\nLocalis v2.4.2\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
+                "About\n\nLocalis v2.4.4\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
                 style = MaterialTheme.typography.bodySmall
             )
         }

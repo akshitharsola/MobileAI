@@ -39,10 +39,11 @@ class TelegramPoller(
     private var offset = 0L
     private var running = false
     private var job: Job? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun start() {
         running = true
-        job = CoroutineScope(Dispatchers.IO).launch {
+        job = scope.launch {
             while (running) {
                 try {
                     poll()
@@ -57,6 +58,7 @@ class TelegramPoller(
     fun stop() {
         running = false
         job?.cancel()
+        scope.cancel()
     }
 
     private fun poll() {
@@ -71,11 +73,14 @@ class TelegramPoller(
             offset = update.updateId + 1
             val msg = update.message ?: continue
             val text = msg.text ?: continue
-            handleMessage(msg.chat.id, text)
+            // Launch inference on a separate coroutine so the polling loop stays free.
+            // Without this, runBlocking blocks the OkHttp thread — if inference takes >25s
+            // the next getUpdates long-poll fires before the previous one finishes, dropping messages.
+            scope.launch { handleMessage(msg.chat.id, text) }
         }
     }
 
-    private fun handleMessage(chatId: Long, text: String) {
+    private suspend fun handleMessage(chatId: Long, text: String) {
         when {
             text == "/start" -> sendMessage(chatId,
                 "Localis is running.\n\nSend any prompt for inference.\n\n" +
@@ -121,7 +126,7 @@ class TelegramPoller(
             else -> {
                 sendMessage(chatId, "⏳ Processing…")
                 val response = try {
-                    runBlocking { service.generateBlocking(text) }
+                    service.generateBlocking(text)
                 } catch (e: Exception) { "Error: ${e.message}" }
                 sendMessage(chatId, response)
             }
