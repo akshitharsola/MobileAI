@@ -1,7 +1,9 @@
 package ai.mlc.mobileai
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @ExperimentalMaterial3Api
 @Composable
@@ -36,7 +41,9 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     var offloading by remember { mutableStateOf(false) }
     val systemStats by appViewModel.systemMonitor.stats.collectAsState()
     val inferenceStats = appViewModel.inferenceStats.value
+    val inferenceHistory = appViewModel.inferenceHistory
     var showShutdownDialog by remember { mutableStateOf(false) }
+    var inferenceHistoryExpanded by remember { mutableStateOf(false) }
 
     // Keep last 30 CPU samples (~60s of history at 2s polling)
     val cpuHistory = remember { mutableStateListOf<Float>() }
@@ -140,30 +147,15 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 ok = service?.telegramPoller != null
             )
 
-            // ── Last Inference Stats ───────────────────────────────────────
-            if (inferenceStats.lastRequestMs > 0L) {
+            // ── Inference History ──────────────────────────────────────────
+            if (inferenceHistory.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Last Inference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        val secsAgo = (System.currentTimeMillis() - inferenceStats.lastRequestMs) / 1000
-                        Text(
-                            "%.1f tokens/sec".format(inferenceStats.tokensPerSecond),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "Prompt: ${inferenceStats.promptTokens} tok  •  Completion: ${inferenceStats.completionTokens} tok",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "First token: ${inferenceStats.timeToFirstTokenMs}ms  •  ${secsAgo}s ago",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Text("Inference", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                InferenceHistoryCard(
+                    history = inferenceHistory,
+                    expanded = inferenceHistoryExpanded,
+                    onToggle = { inferenceHistoryExpanded = !inferenceHistoryExpanded }
+                )
             }
 
             // ── Model Selector ─────────────────────────────────────────────
@@ -386,6 +378,90 @@ private fun SystemUsageCard(
                     color = thermalColor,
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InferenceHistoryCard(
+    history: List<InferenceStats>,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            // Header row — always visible, shows latest entry summary + expand toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Outlined.Speed, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Column(modifier = Modifier.weight(1f)) {
+                    val latest = history.first()
+                    Text(
+                        "%.1f tok/s  •  ${latest.completionTokens} tokens".format(latest.tokensPerSecond),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "TTFT ${latest.timeToFirstTokenMs}ms  •  ${timeFormat.format(Date(latest.lastRequestMs))}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    "${history.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Expanded history list
+            AnimatedVisibility(visible = expanded) {
+                Column {
+                    HorizontalDivider(thickness = 0.5.dp)
+                    history.forEachIndexed { idx, entry ->
+                        if (idx == 0) return@forEachIndexed  // already shown in header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "#${idx + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.width(24.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "%.1f tok/s  •  ${entry.completionTokens} tok out  •  ${entry.promptTokens} tok in".format(entry.tokensPerSecond),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "TTFT ${entry.timeToFirstTokenMs}ms  •  ${timeFormat.format(Date(entry.lastRequestMs))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (idx < history.size - 1) HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(horizontal = 12.dp))
+                    }
+                }
             }
         }
     }

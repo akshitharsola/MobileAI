@@ -54,6 +54,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val totalRamMB = mutableStateOf(0L)
     val systemMonitor = SystemMonitor(application)
     val inferenceStats = mutableStateOf(InferenceStats())
+    val inferenceHistory = emptyList<InferenceStats>().toMutableStateList()
 
     companion object {
         const val AppConfigFilename = "mlc-app-config.json"
@@ -528,10 +529,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     var streaming = ""
                     var truncated = false
+                    var completionTokenCount = 0
+                    var firstTokenMs = 0L
+                    val startMs = System.currentTimeMillis()
                     for (res in responses) {
                         val ok = try {
                             for (choice in res.choices) {
-                                choice.delta.content?.let { streaming += it.asText() }
+                                choice.delta.content?.let {
+                                    if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
+                                    streaming += it.asText()
+                                    completionTokenCount++
+                                }
                                 if (choice.finish_reason == "length") truncated = true
                             }
                             if (truncated) streaming += " [truncated]"
@@ -556,7 +564,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     } else {
                         if (historyMessages.isNotEmpty()) historyMessages.removeAt(historyMessages.size - 1)
                     }
+                    val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
+                    val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
+                    val entry = InferenceStats(
+                        tokensPerSecond = tps,
+                        promptTokens = prompt.length / 4,
+                        completionTokens = completionTokenCount,
+                        timeToFirstTokenMs = firstTokenMs,
+                        lastRequestMs = System.currentTimeMillis()
+                    )
                     withContext(Dispatchers.Main) {
+                        this@AppViewModel.inferenceStats.value = entry
+                        this@AppViewModel.inferenceHistory.add(0, entry)
+                        if (this@AppViewModel.inferenceHistory.size > 20)
+                            this@AppViewModel.inferenceHistory.removeAt(this@AppViewModel.inferenceHistory.size - 1)
                         if (modelChatState.value == ModelChatState.Generating) switchToReady()
                     }
                 }
@@ -589,13 +610,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
             val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
             scope.launch {
-                this@AppViewModel.inferenceStats.value = InferenceStats(
+                val entry = InferenceStats(
                     tokensPerSecond = tps,
                     promptTokens = msgs.sumOf { it.content.toString().length / 4 },
                     completionTokens = completionTokenCount,
                     timeToFirstTokenMs = firstTokenMs,
                     lastRequestMs = System.currentTimeMillis()
                 )
+                this@AppViewModel.inferenceStats.value = entry
+                this@AppViewModel.inferenceHistory.add(0, entry)
+                if (this@AppViewModel.inferenceHistory.size > 20)
+                    this@AppViewModel.inferenceHistory.removeAt(this@AppViewModel.inferenceHistory.size - 1)
             }
             return result.toString().trim()
         }
