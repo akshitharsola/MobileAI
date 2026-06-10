@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 
 data class ChatRequest(
     val prompt: String = "",
-    val max_tokens: Int = 512,
+    val max_tokens: Int = 2048,
     val model: String? = null
 )
 data class ChatResponse(val response: String, val model: String)
@@ -26,7 +26,7 @@ data class OaiMessage(val role: String, val content: String)
 data class OaiChatRequest(
     val model: String? = null,
     val messages: List<OaiMessage> = emptyList(),
-    val max_tokens: Int = 512,
+    val max_tokens: Int = 2048,
     val stream: Boolean = false
 )
 data class OaiChoice(val index: Int, val message: OaiMessage, val finish_reason: String)

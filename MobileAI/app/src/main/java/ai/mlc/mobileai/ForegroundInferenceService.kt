@@ -162,7 +162,7 @@ class ForegroundInferenceService : Service() {
         return state.chatable()
     }
 
-    suspend fun generateBlocking(prompt: String, maxTokens: Int = 512, modelId: String? = null): String {
+    suspend fun generateBlocking(prompt: String, maxTokens: Int = 2048, modelId: String? = null): String {
         val resolved = if (modelId != null) resolveModelId(modelId) else null
         if (!ensureModelLoaded(resolved)) return "No model loaded. Download a model first."
         val cappedTokens = maxTokens.coerceAtMost(4096)

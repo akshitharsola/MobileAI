@@ -22,7 +22,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
     val prefs = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
     var botToken by remember { mutableStateOf(prefs.getString("bot_token", "") ?: "") }
     var apiPort by remember { mutableStateOf(prefs.getInt("api_port", 8080).toString()) }
-    var contextLen by remember { mutableStateOf(prefs.getInt("context_len", 2048).toString()) }
+    var contextLen by remember { mutableStateOf(prefs.getInt("context_len", 4096).toString()) }
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
     val service = activity.getInferenceService()
@@ -86,7 +86,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
             OutlinedTextField(
                 value = contextLen,
                 onValueChange = { contextLen = it.filter { c -> c.isDigit() } },
-                label = { Text("Context Length (e.g. 2048)") },
+                label = { Text("Context Length (e.g. 4096)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
@@ -134,7 +134,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                     prefs.edit()
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
-                        .putInt("context_len", contextLen.toIntOrNull() ?: 2048)
+                        .putInt("context_len", contextLen.toIntOrNull() ?: 4096)
                         .putString("default_model", defaultModel)
                         .apply()
                     // Restart bot immediately if token changed and service is bound
@@ -155,7 +155,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
 
             Divider()
             Text(
-                "About\n\nLocalis v2.6.1\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
+                "About\n\nLocalis v2.6.2\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
                 style = MaterialTheme.typography.bodySmall
             )
         }
