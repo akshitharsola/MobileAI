@@ -12,6 +12,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
@@ -28,6 +30,9 @@ class ForegroundInferenceService : Service() {
         }
     }
     private val inferenceDispatcher = inferenceExecutor.asCoroutineDispatcher()
+
+    // Global mutex: only one inference runs at a time, queue drains the GPU before the next prefill
+    private val inferenceMutex = Mutex()
 
     var chatState: AppViewModel.ChatState? = null
     var appViewModel: AppViewModel? = null
@@ -161,16 +166,24 @@ class ForegroundInferenceService : Service() {
         val resolved = if (modelId != null) resolveModelId(modelId) else null
         if (!ensureModelLoaded(resolved)) return "No model loaded. Download a model first."
         val cappedTokens = maxTokens.coerceAtMost(4096)
-        return try {
-            withTimeout(180_000L) {
-                withContext(inferenceDispatcher) {
-                    // Brief yield before starting so any pending UI frames can render
-                    delay(50)
-                    chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
+        // Serialize all inference requests — prevents concurrent prefill which saturates GPU queue
+        return inferenceMutex.withLock {
+            try {
+                withTimeout(180_000L) {
+                    withContext(inferenceDispatcher) {
+                        // Pre-prefill delay proportional to prompt length: lets GPU drain from any prior work
+                        val promptWords = prompt.split(" ").size
+                        val prePrefillMs = (promptWords * 2L).coerceIn(100L, 2000L)
+                        Thread.sleep(prePrefillMs)
+                        val result = chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
+                        // Post-inference GPU drain cooldown before releasing mutex for next request
+                        Thread.sleep(3000)
+                        result
+                    }
                 }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                "Request timed out after 180 seconds."
             }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            "Request timed out after 180 seconds."
         }
     }
 

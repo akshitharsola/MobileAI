@@ -24,6 +24,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -134,12 +138,39 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 thermalAvailable = systemStats.thermalAvailable
             )
 
-            StatusCard(
-                icon = Icons.Outlined.Cloud,
-                title = "API Server",
-                value = if (service?.apiServer != null) "Running on :8080" else "Stopped",
-                ok = service?.apiServer != null
-            )
+            val apiRunningForCard = service?.apiServer != null
+            val apiPort = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getInt("api_port", 8080)
+            val apiUrl = if (apiRunningForCard) {
+                val ip = activity.getLocalIpAddress()
+                "http://$ip:$apiPort"
+            } else "Stopped"
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (apiRunningForCard) Modifier.clickable {
+                        val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("api_url", apiUrl))
+                        Toast.makeText(activity, "Copied: $apiUrl", Toast.LENGTH_SHORT).show()
+                    } else Modifier)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Outlined.Cloud, null, tint = if (apiRunningForCard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("API Server", style = MaterialTheme.typography.labelMedium)
+                        Text(apiUrl, style = MaterialTheme.typography.bodyMedium)
+                        if (apiRunningForCard) Text("tap to copy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(
+                        if (apiRunningForCard) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                        null,
+                        tint = if (apiRunningForCard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                }
+            }
 
             StatusCard(
                 icon = Icons.Outlined.Send,
