@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
             inferenceService = service
             service.chatState = chatState
             service.appViewModel = appViewModelRef
+            appViewModelRef.inferenceMutex = service.inferenceMutex
             clipboardMonitor = ClipboardMonitor(this@MainActivity, service)
             clipboardMonitor?.start()
             val prefs = getSharedPreferences("mobileai", MODE_PRIVATE)

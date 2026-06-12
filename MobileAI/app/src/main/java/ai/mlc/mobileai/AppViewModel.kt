@@ -19,6 +19,8 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
@@ -49,6 +51,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val appDirFile = application.getExternalFilesDir("")
     private val gson = Gson()
     private val modelIdSet = emptySet<String>().toMutableSet()
+
+    // Set by MainActivity after service bind — same mutex generateBlocking uses, so UI chat
+    // and API/Telegram inference are serialized and never overlap on the GPU
+    var inferenceMutex: Mutex? = null
 
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
@@ -104,22 +110,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         alertMessage.value = error
     }
 
-    fun requestDeleteModel(modelId: String) {
-        deleteModel(modelId)
-    }
-
-    private fun getDeletedModelIds(): MutableSet<String> {
-        val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
-        return prefs.getStringSet("deleted_model_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
-    }
-
-    private fun persistDeletedModelId(modelId: String) {
-        val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
-        val deleted = getDeletedModelIds()
-        deleted.add(modelId)
-        prefs.edit().putStringSet("deleted_model_ids", deleted).apply()
-    }
-
     private fun loadAppConfig() {
         // Always use the bundled assets config as source of truth.
         val appConfigFile = File(appDirFile, AppConfigFilename)
@@ -130,10 +120,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         modelList.clear()
         modelIdSet.clear()
         modelSampleList.clear()
-        val deletedIds = getDeletedModelIds()
+        // Migration: pre-v2.7 builds blacklisted deleted models forever; drop the blacklist
+        // so previously-deleted models reappear with a Download button.
+        application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            .edit().remove("deleted_model_ids").apply()
         for (modelRecord in appConfig.modelList) {
-            // Skip models the user explicitly deleted
-            if (deletedIds.contains(modelRecord.modelId)) continue
             appConfig.modelLibs.add(modelRecord.modelLib)
             val modelDirFile = File(appDirFile, modelRecord.modelId)
             val modelConfigFile = File(modelDirFile, ModelConfigFilename)
@@ -175,14 +166,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
-    }
-
-    private fun deleteModel(modelId: String) {
-        File(appDirFile, modelId).deleteRecursively()
-        modelIdSet.remove(modelId)
-        modelList.removeIf { it.modelConfig.modelId == modelId }
-        updateAppConfig { appConfig.modelList.removeIf { it.modelId == modelId } }
-        persistDeletedModelId(modelId)
     }
 
     private fun isModelConfigAllowed(modelConfig: ModelConfig): Boolean {
@@ -270,14 +253,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        fun handleStart() {
-            // Remove from deleted set so it persists after next restart
-            val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
-            val deleted = getDeletedModelIds()
-            deleted.remove(modelConfig.modelId)
-            prefs.edit().putStringSet("deleted_model_ids", deleted).apply()
-            switchToDownloading()
-        }
+        fun handleStart() { switchToDownloading() }
         fun handlePause() { switchToPausing() }
 
         fun handleClear() {
@@ -372,7 +348,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             switchToIndexing()
         }
 
-        private fun delete() { modelDirFile.deleteRecursively(); requestDeleteModel(modelConfig.modelId) }
+        private fun delete() {
+            // Keep mlc-chat-config.json: the full engine config can't be reconstructed from the
+            // in-memory ModelConfig subset, and downloadParamsConfig needs the dir to exist.
+            // The card stays in the list and resets to an undownloaded state.
+            modelDirFile.listFiles { _, name -> name != ModelConfigFilename }?.forEach { it.deleteRecursively() }
+            progress.value = 0
+            total.value = 1
+            switchToInitializing()
+        }
         private fun switchToPausing() { modelInitState.value = ModelInitState.Pausing }
         private fun switchToPaused() { modelInitState.value = ModelInitState.Paused }
         private fun switchToFinished() { modelInitState.value = ModelInitState.Finished }
@@ -521,68 +505,86 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 imageUri = null
             }
+            val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            val maxTokens = prefs.getInt("max_tokens", 2048).coerceIn(256, 4096)
+            val noThink = prefs.getBoolean("no_think", false)
             executorService.submit {
                 historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = content))
                 scope.launch(Dispatchers.Default) {
                     // Deprioritize inference so UI/system threads stay responsive
                     android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
-                    val responses = engine.chat.completions.create(
-                        messages = historyMessages,
-                        stream_options = OpenAIProtocol.StreamOptions(include_usage = true)
-                    )
-                    var streaming = ""
-                    var truncated = false
-                    var completionTokenCount = 0
-                    var firstTokenMs = 0L
-                    val startMs = System.currentTimeMillis()
-                    for (res in responses) {
-                        val ok = try {
-                            for (choice in res.choices) {
-                                choice.delta.content?.let {
-                                    if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
-                                    streaming += it.asText()
-                                    completionTokenCount++
+                    suspend fun runInference() {
+                        // Qwen3 soft switch: a /no_think system message disables the <think> phase
+                        val requestMessages = if (noThink)
+                            mutableListOf(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.system, content = "/no_think")).apply { addAll(historyMessages) }
+                        else historyMessages
+                        val responses = engine.chat.completions.create(
+                            messages = requestMessages,
+                            max_tokens = maxTokens,
+                            stream_options = OpenAIProtocol.StreamOptions(include_usage = true)
+                        )
+                        var streaming = ""
+                        var truncated = false
+                        var completionTokenCount = 0
+                        var firstTokenMs = 0L
+                        val startMs = System.currentTimeMillis()
+                        for (res in responses) {
+                            val ok = try {
+                                for (choice in res.choices) {
+                                    choice.delta.content?.let {
+                                        if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
+                                        streaming += it.asText()
+                                        completionTokenCount++
+                                    }
+                                    if (choice.finish_reason == "length") truncated = true
                                 }
-                                if (choice.finish_reason == "length") truncated = true
+                                true
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    appendMessage(MessageRole.Assistant, "Error: ${e.localizedMessage}")
+                                    switchToFailed()
+                                }
+                                false
                             }
-                            if (truncated) streaming += " [truncated]"
-                            true
-                        } catch (e: Exception) {
-                            withContext(Dispatchers.Main) {
-                                appendMessage(MessageRole.Assistant, "Error: ${e.localizedMessage}")
-                                switchToFailed()
+                            if (!ok) return
+                            val (think, answer, thinkOpen) = parseThinkBlocks(streaming)
+                            val displayText = answer + if (truncated) " [truncated]" else ""
+                            withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, displayText, think, thinkOpen) }
+                            res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
+                            // Thermal-driven token pacing — gates GPU dispatch based on actual heat, not ghost CPU%
+                            when {
+                                this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
+                                this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
+                                else -> Thread.sleep(30)
                             }
-                            false
                         }
-                        if (!ok) return@launch
-                        withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, streaming) }
-                        res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
-                        // Thermal-driven token pacing — gates GPU dispatch based on actual heat, not ghost CPU%
-                        when {
-                            this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
-                            this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
-                            else -> Thread.sleep(30)
+                        if (streaming.isNotEmpty()) {
+                            // Store only the answer in history — re-feeding <think> content wastes context
+                            val (_, finalAnswer, _) = parseThinkBlocks(streaming)
+                            historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = finalAnswer.ifEmpty { streaming }))
+                        } else {
+                            if (historyMessages.isNotEmpty()) historyMessages.removeAt(historyMessages.size - 1)
+                        }
+                        val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
+                        val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
+                        val entry = InferenceStats(
+                            tokensPerSecond = tps,
+                            promptTokens = prompt.length / 4,
+                            completionTokens = completionTokenCount,
+                            timeToFirstTokenMs = firstTokenMs,
+                            lastRequestMs = System.currentTimeMillis()
+                        )
+                        withContext(Dispatchers.Main) {
+                            this@AppViewModel.inferenceStats.value = entry
+                            this@AppViewModel.inferenceHistory.add(0, entry)
+                            if (this@AppViewModel.inferenceHistory.size > 20)
+                                this@AppViewModel.inferenceHistory.removeAt(this@AppViewModel.inferenceHistory.size - 1)
                         }
                     }
-                    if (streaming.isNotEmpty()) {
-                        historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = streaming))
-                    } else {
-                        if (historyMessages.isNotEmpty()) historyMessages.removeAt(historyMessages.size - 1)
-                    }
-                    val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
-                    val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
-                    val entry = InferenceStats(
-                        tokensPerSecond = tps,
-                        promptTokens = prompt.length / 4,
-                        completionTokens = completionTokenCount,
-                        timeToFirstTokenMs = firstTokenMs,
-                        lastRequestMs = System.currentTimeMillis()
-                    )
+                    // Same mutex as generateBlocking: UI chat queues behind API/Telegram inference
+                    val mutex = this@AppViewModel.inferenceMutex
+                    if (mutex != null) mutex.withLock { runInference() } else runInference()
                     withContext(Dispatchers.Main) {
-                        this@AppViewModel.inferenceStats.value = entry
-                        this@AppViewModel.inferenceHistory.add(0, entry)
-                        if (this@AppViewModel.inferenceHistory.size > 20)
-                            this@AppViewModel.inferenceHistory.removeAt(this@AppViewModel.inferenceHistory.size - 1)
                         if (modelChatState.value == ModelChatState.Generating) switchToReady()
                     }
                 }
@@ -592,11 +594,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Used by ForegroundInferenceService for headless inference
         suspend fun generateResponse(prompt: String, maxTokens: Int = 512): String {
             if (!chatable()) return "Model not ready"
-            val msgs = listOf(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = prompt))
+            val noThink = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+                .getBoolean("no_think", false)
+            val msgs = mutableListOf<ChatCompletionMessage>()
+            if (noThink) msgs.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.system, content = "/no_think"))
+            msgs.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = prompt))
             val result = StringBuilder()
             var firstTokenMs = 0L
             val startMs = System.currentTimeMillis()
             var completionTokenCount = 0
+            var truncated = false
 
             val responses = engine.chat.completions.create(
                 messages = msgs,
@@ -610,6 +617,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         result.append(it.asText())
                         completionTokenCount++
                     }
+                    if (choice.finish_reason == "length") truncated = true
                 }
                 // Thermal-driven token pacing for headless path
                 when {
@@ -633,11 +641,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 if (this@AppViewModel.inferenceHistory.size > 20)
                     this@AppViewModel.inferenceHistory.removeAt(this@AppViewModel.inferenceHistory.size - 1)
             }
-            return result.toString().trim()
+            // " [truncated]" is a sentinel consumed by ApiServer to report finish_reason="length"
+            return result.toString().trim() + if (truncated) " [truncated]" else ""
         }
 
         private fun appendMessage(role: MessageRole, text: String) { messages.add(MessageData(role, text)) }
-        private fun updateMessage(role: MessageRole, text: String) { messages[messages.size - 1] = MessageData(role, text) }
+        private fun updateMessage(role: MessageRole, text: String, thinkContent: String = "", isThinkOpen: Boolean = false) {
+            // copy() preserves the message id so LazyColumn keys stay stable during streaming
+            val last = messages[messages.size - 1]
+            messages[messages.size - 1] = last.copy(role = role, text = text, thinkContent = thinkContent, isThinkOpen = isThinkOpen)
+        }
         fun chatable(): Boolean = modelChatState.value == ModelChatState.Ready && modelName.value.isNotBlank()
         fun interruptable(): Boolean = modelChatState.value == ModelChatState.Ready ||
                 modelChatState.value == ModelChatState.Generating ||
@@ -650,7 +663,39 @@ enum class ModelChatState { Generating, Resetting, Reloading, Terminating, Ready
 enum class MessageRole { Assistant, User }
 
 data class DownloadTask(val url: URL, val file: File)
-data class MessageData(val role: MessageRole, val text: String, val id: UUID = UUID.randomUUID(), var imageUri: Uri? = null)
+data class MessageData(
+    val role: MessageRole,
+    val text: String,
+    val id: UUID = UUID.randomUUID(),
+    var imageUri: Uri? = null,
+    val thinkContent: String = "",
+    val isThinkOpen: Boolean = false
+)
+
+// Splits Qwen3-style output into (think content, answer content, isThinkOpen).
+// Tolerant of an unclosed <think> while streaming. Used by chat UI and ApiServer.
+fun parseThinkBlocks(text: String): Triple<String, String, Boolean> {
+    val think = StringBuilder()
+    val answer = StringBuilder()
+    var i = 0
+    var open = false
+    while (i < text.length) {
+        if (!open) {
+            val start = text.indexOf("<think>", i)
+            if (start == -1) { answer.append(text, i, text.length); break }
+            answer.append(text, i, start)
+            i = start + "<think>".length
+            open = true
+        } else {
+            val end = text.indexOf("</think>", i)
+            if (end == -1) { think.append(text, i, text.length); break }
+            think.append(text, i, end).append('\n')
+            i = end + "</think>".length
+            open = false
+        }
+    }
+    return Triple(think.toString().trim(), answer.toString().trim(), open)
+}
 data class AppConfig(
     @SerializedName("model_libs") var modelLibs: MutableList<String>,
     @SerializedName("model_list") val modelList: MutableList<ModelRecord>

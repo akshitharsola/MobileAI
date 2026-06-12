@@ -6,8 +6,8 @@
             "model_id": "Qwen3-1.7B-q4f16_1-MLC",
             "estimated_vram_bytes": 1500000000,
             "overrides": {
-                "prefill_chunk_size": 128,
-                "context_window_size": 4096,
+                "prefill_chunk_size": 256,
+                "context_window_size": 8192,
                 "max_batch_size": 1
             }
         },
@@ -16,8 +16,8 @@
             "model_id": "Qwen3-4B-q4f16_1-MLC",
             "estimated_vram_bytes": 3000000000,
             "overrides": {
-                "prefill_chunk_size": 128,
-                "context_window_size": 4096,
+                "prefill_chunk_size": 256,
+                "context_window_size": 8192,
                 "max_batch_size": 1
             }
         }

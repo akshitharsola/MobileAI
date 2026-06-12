@@ -131,7 +131,7 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
                     Text("clear data", color = MaterialTheme.colorScheme.error)
                 }
                 TextButton(onClick = { isDeletingModel = false; modelState.handleDelete() }) {
-                    Text("delete", color = MaterialTheme.colorScheme.error)
+                    Text("delete files", color = MaterialTheme.colorScheme.error)
                 }
             }
         }

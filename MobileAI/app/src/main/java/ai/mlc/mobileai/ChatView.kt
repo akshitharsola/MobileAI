@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -94,6 +96,9 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
     SelectionContainer {
         if (messageData.role == MessageRole.Assistant) {
             Column {
+                if (messageData.thinkContent.isNotEmpty() || messageData.isThinkOpen) {
+                    ThinkCard(messageData)
+                }
                 if (messageData.text.isNotEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Markdown", color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.wrapContentWidth().padding(end = 8.dp).widthIn(max = 300.dp))
@@ -131,6 +136,51 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                         modifier = Modifier.wrapContentWidth().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(5.dp)).padding(5.dp).widthIn(max = 300.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ThinkCard(messageData: MessageData) {
+    var expanded by remember(messageData.id) { mutableStateOf(false) }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier
+            .padding(bottom = 4.dp)
+            .widthIn(max = 300.dp)
+            .clickable { expanded = !expanded }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            if (messageData.isThinkOpen) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Thinking…", style = MaterialTheme.typography.labelMedium)
+            } else {
+                Icon(
+                    Icons.Outlined.Psychology, null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Thought process", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded && messageData.thinkContent.isNotEmpty()) {
+            Text(
+                messageData.thinkContent,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+            )
         }
     }
 }

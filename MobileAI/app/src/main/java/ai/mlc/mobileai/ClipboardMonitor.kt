@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ClipboardMonitor(
     private val context: Context,
@@ -21,6 +22,9 @@ class ClipboardMonitor(
     fun start() {
         listener = ClipboardManager.OnPrimaryClipChangedListener {
             val clip = clipboard.primaryClip ?: return@OnPrimaryClipChangedListener
+            // Ignore our own clips (API URL copy, AI response) — no "Send to AI?" self-notification
+            val label = clip.description?.label?.toString()
+            if (label == "api_url" || label == "MobileAI Response") return@OnPrimaryClipChangedListener
             val text = clip.getItemAt(0)?.text?.toString() ?: return@OnPrimaryClipChangedListener
             if (text.length > 10 && text != lastClip) {
                 lastClip = text
@@ -61,7 +65,8 @@ class ClipboardMonitor(
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val preview = if (response.length > 80) response.take(80) + "…" else response
             val clip = android.content.ClipData.newPlainText("MobileAI Response", response)
-            clipboard.setPrimaryClip(clip)
+            // Clipboard writes from background threads are silently dropped on Android 10+
+            withContext(Dispatchers.Main) { clipboard.setPrimaryClip(clip) }
             val notification = NotificationCompat.Builder(context, ForegroundInferenceService.CHANNEL_ID)
                 .setContentTitle("MobileAI Response (copied)")
                 .setContentText(preview)

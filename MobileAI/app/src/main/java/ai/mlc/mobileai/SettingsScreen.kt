@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -22,7 +23,8 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
     val prefs = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
     var botToken by remember { mutableStateOf(prefs.getString("bot_token", "") ?: "") }
     var apiPort by remember { mutableStateOf(prefs.getInt("api_port", 8080).toString()) }
-    var contextLen by remember { mutableStateOf(prefs.getInt("context_len", 4096).toString()) }
+    var maxTokens by remember { mutableStateOf(prefs.getInt("max_tokens", 2048).toString()) }
+    var noThink by remember { mutableStateOf(prefs.getBoolean("no_think", false)) }
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
     val service = activity.getInferenceService()
@@ -84,13 +86,27 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
             Divider()
             Text("Inference", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
-                value = contextLen,
-                onValueChange = { contextLen = it.filter { c -> c.isDigit() } },
-                label = { Text("Context Length (e.g. 4096)") },
+                value = maxTokens,
+                onValueChange = { maxTokens = it.filter { c -> c.isDigit() } },
+                label = { Text("Max output tokens (256–4096)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Disable thinking (/no_think)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Qwen3 answers directly, skipping the <think> phase",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = noThink, onCheckedChange = { noThink = it })
+            }
 
             if (modelIds.isNotEmpty()) {
                 Divider()
@@ -134,7 +150,9 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                     prefs.edit()
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
-                        .putInt("context_len", contextLen.toIntOrNull() ?: 4096)
+                        .putInt("max_tokens", (maxTokens.toIntOrNull() ?: 2048).coerceIn(256, 4096))
+                        .putBoolean("no_think", noThink)
+                        .remove("context_len")
                         .putString("default_model", defaultModel)
                         .apply()
                     // Restart bot immediately if token changed and service is bound
@@ -155,7 +173,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
 
             Divider()
             Text(
-                "About\n\nLocalis v2.6.2\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
+                "About\n\nLocalis v2.7\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
                 style = MaterialTheme.typography.bodySmall
             )
         }

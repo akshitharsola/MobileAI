@@ -22,7 +22,8 @@ data class HealthResponse(val status: String, val model: String, val loaded: Boo
 data class ModelInfo(val id: String, val loaded: Boolean)
 
 // OpenAI-compatible types
-data class OaiMessage(val role: String, val content: String)
+// reasoning_content carries <think> output, DeepSeek-style; null (omitted) when absent
+data class OaiMessage(val role: String, val content: String, val reasoning_content: String? = null)
 data class OaiChatRequest(
     val model: String? = null,
     val messages: List<OaiMessage> = emptyList(),
@@ -129,10 +130,14 @@ class ApiServer(
                         }
                     } + "\nAssistant:"
 
-                    val response = service.generateBlocking(prompt, req.max_tokens.coerceAtMost(4096), req.model)
+                    val raw = service.generateBlocking(prompt, req.max_tokens.coerceAtMost(4096), req.model)
+                    // generateResponse appends a " [truncated]" sentinel on finish_reason=="length"
+                    val truncated = raw.trimEnd().endsWith("[truncated]")
+                    val cleaned = if (truncated) raw.trimEnd().removeSuffix("[truncated]").trimEnd() else raw
+                    val (think, answer, _) = parseThinkBlocks(cleaned)
                     val modelName = service.loadedModelName()
                     val promptTokens = prompt.length / 4
-                    val completionTokens = response.length / 4
+                    val completionTokens = cleaned.length / 4
 
                     val oaiResp = OaiChatResponse(
                         id = "chatcmpl-${java.util.UUID.randomUUID()}",
@@ -140,8 +145,12 @@ class ApiServer(
                         choices = listOf(
                             OaiChoice(
                                 index = 0,
-                                message = OaiMessage(role = "assistant", content = response),
-                                finish_reason = "stop"
+                                message = OaiMessage(
+                                    role = "assistant",
+                                    content = answer,
+                                    reasoning_content = think.ifEmpty { null }
+                                ),
+                                finish_reason = if (truncated) "length" else "stop"
                             )
                         ),
                         usage = OaiUsage(

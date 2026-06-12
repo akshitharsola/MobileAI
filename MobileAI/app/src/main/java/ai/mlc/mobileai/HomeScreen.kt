@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -148,9 +149,20 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(if (apiRunningForCard) Modifier.clickable {
+                        // Recompute everything at click time — composition-time values can be stale
+                        val svc = activity.getInferenceService()
+                        if (svc?.apiServer == null) {
+                            Toast.makeText(activity, "API server is stopped", Toast.LENGTH_SHORT).show()
+                            return@clickable
+                        }
+                        val port = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getInt("api_port", 8080)
+                        val url = "http://${activity.getLocalIpAddress()}:$port"
                         val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cm.setPrimaryClip(ClipData.newPlainText("api_url", apiUrl))
-                        Toast.makeText(activity, "Copied: $apiUrl", Toast.LENGTH_SHORT).show()
+                        cm.setPrimaryClip(ClipData.newPlainText("api_url", url))
+                        // HyperOS can silently block clipboard writes — verify by reading back
+                        val copied = cm.primaryClip?.getItemAt(0)?.text?.toString() == url
+                        if (copied) Toast.makeText(activity, "Copied: $url", Toast.LENGTH_SHORT).show()
+                        else Toast.makeText(activity, "Copy blocked by system — long-press the URL to select it manually", Toast.LENGTH_LONG).show()
                     } else Modifier)
             ) {
                 Row(
@@ -161,7 +173,9 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     Icon(Icons.Outlined.Cloud, null, tint = if (apiRunningForCard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                     Column(modifier = Modifier.weight(1f)) {
                         Text("API Server", style = MaterialTheme.typography.labelMedium)
-                        Text(apiUrl, style = MaterialTheme.typography.bodyMedium)
+                        SelectionContainer {
+                            Text(apiUrl, style = MaterialTheme.typography.bodyMedium)
+                        }
                         if (apiRunningForCard) Text("tap to copy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(

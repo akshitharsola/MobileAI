@@ -31,8 +31,9 @@ class ForegroundInferenceService : Service() {
     }
     private val inferenceDispatcher = inferenceExecutor.asCoroutineDispatcher()
 
-    // Global mutex: only one inference runs at a time, queue drains the GPU before the next prefill
-    private val inferenceMutex = Mutex()
+    // Global mutex: only one inference runs at a time, queue drains the GPU before the next prefill.
+    // Shared with AppViewModel so UI chat and API/Telegram requests can never overlap.
+    val inferenceMutex = Mutex()
 
     var chatState: AppViewModel.ChatState? = null
     var appViewModel: AppViewModel? = null
