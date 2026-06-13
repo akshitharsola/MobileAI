@@ -118,11 +118,10 @@ class ForegroundInferenceService : Service() {
         val vm = appViewModel ?: return false
         val target = resolveModelId(nameOrId) ?: return false
         val modelState = vm.modelList.firstOrNull {
-            it.modelConfig.modelId == target &&
+            it.record.model_id == target &&
             it.modelInitState.value == ModelInitState.Finished
         } ?: return false
-        val modelPath = modelState.modelDirFile.absolutePath
-        chatState?.requestReloadChat(modelState.modelConfig, modelPath)
+        chatState?.requestReloadChat(modelState.record)
         return true
     }
 
@@ -147,16 +146,16 @@ class ForegroundInferenceService : Service() {
         val defaultId = preferredModelId
             ?: prefs.getString("default_model", null)
             ?: vm.modelList.firstOrNull { it.modelInitState.value == ModelInitState.Finished }
-                ?.modelConfig?.modelId
+                ?.record?.model_id
             ?: return false
 
         val modelState = vm.modelList.firstOrNull {
-            it.modelConfig.modelId == defaultId &&
+            it.record.model_id == defaultId &&
             it.modelInitState.value == ModelInitState.Finished
         } ?: vm.modelList.firstOrNull { it.modelInitState.value == ModelInitState.Finished }
             ?: return false
 
-        chatState?.requestReloadChat(modelState.modelConfig, modelState.modelDirFile.absolutePath)
+        chatState?.requestReloadChat(modelState.record)
 
         val deadline = System.currentTimeMillis() + 120_000
         while (!state.chatable() && System.currentTimeMillis() < deadline) delay(500)
@@ -194,11 +193,11 @@ class ForegroundInferenceService : Service() {
         val lower = nameOrId.lowercase().trim()
         return when {
             lower == "1.7b" || lower == "1.7" || lower == "small" ->
-                vm.modelList.firstOrNull { it.modelConfig.modelId.contains("1.7B", ignoreCase = true) }?.modelConfig?.modelId
+                vm.modelList.firstOrNull { it.record.model_id.contains("1.7B", ignoreCase = true) }?.record?.model_id
             lower == "4b" || lower == "4" || lower == "large" ->
-                vm.modelList.firstOrNull { it.modelConfig.modelId.contains("4B", ignoreCase = true) }?.modelConfig?.modelId
+                vm.modelList.firstOrNull { it.record.model_id.contains("4B", ignoreCase = true) }?.record?.model_id
             else ->
-                vm.modelList.firstOrNull { it.modelConfig.modelId.equals(nameOrId, ignoreCase = true) }?.modelConfig?.modelId
+                vm.modelList.firstOrNull { it.record.model_id.equals(nameOrId, ignoreCase = true) }?.record?.model_id
         }
     }
 
