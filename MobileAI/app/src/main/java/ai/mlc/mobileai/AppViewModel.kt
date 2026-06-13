@@ -2,8 +2,6 @@
 // Extended by Akshit Harsola — adds generateResponse(), RAM tracking, service bridge
 package ai.mlc.mobileai
 
-import ai.mlc.mlcllm.MLCEngine
-import ai.mlc.mlcllm.OpenAIProtocol
 import android.app.ActivityManager
 import android.app.Application
 import android.content.ClipData
@@ -28,8 +26,6 @@ import java.nio.channels.Channels
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
-import ai.mlc.mlcllm.OpenAIProtocol.ChatCompletionMessage
-import ai.mlc.mlcllm.OpenAIProtocol.ChatCompletionMessageContent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
