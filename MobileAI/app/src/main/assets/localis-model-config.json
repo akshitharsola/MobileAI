@@ -1,0 +1,18 @@
+{
+  "model_list": [
+    {
+      "model_id": "Qwen3-1.7B",
+      "display_name": "Qwen3 1.7B",
+      "filename": "Qwen3-1.7B.litertlm",
+      "estimated_size_bytes": 1500000000,
+      "backend": "gpu"
+    },
+    {
+      "model_id": "Qwen3-4B",
+      "display_name": "Qwen3 4B",
+      "filename": "Qwen3-4B.litertlm",
+      "estimated_size_bytes": 3000000000,
+      "backend": "gpu"
+    }
+  ]
+}
