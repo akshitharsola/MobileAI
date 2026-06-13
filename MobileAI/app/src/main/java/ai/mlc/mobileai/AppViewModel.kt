@@ -441,27 +441,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             var completionTokenCount = 0
             var tokensSinceBreath = 0
 
-            engine.streamResponse(
-                prompt = prompt,
-                systemPrompt = systemPrompt,
-                history = emptyList(),
-                maxTokens = maxTokens
-            ).collect { token ->
-                if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
-                result.append(token)
-                completionTokenCount++
-                tokensSinceBreath++
-                // GPU breath window every 10 tokens — lets display pipeline sneak in a frame
-                if (tokensSinceBreath >= 10) {
-                    tokensSinceBreath = 0
-                    delay(50)
+            try {
+                engine.streamResponse(
+                    prompt = prompt,
+                    systemPrompt = systemPrompt,
+                    history = emptyList(),
+                    maxTokens = maxTokens
+                ).collect { token ->
+                    if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
+                    result.append(token)
+                    completionTokenCount++
+                    tokensSinceBreath++
+                    // GPU breath window every 10 tokens — lets display pipeline sneak in a frame
+                    if (tokensSinceBreath >= 10) {
+                        tokensSinceBreath = 0
+                        delay(50)
+                    }
+                    // Thermal-driven token pacing for headless path — delay() suspends, Thread.sleep() blocks
+                    when {
+                        this@AppViewModel.thermalGovernor.hardLimit -> delay(500)
+                        this@AppViewModel.thermalGovernor.softLimit -> delay(150)
+                        else -> delay(30)
+                    }
                 }
-                // Thermal-driven token pacing for headless path — delay() suspends, Thread.sleep() blocks
-                when {
-                    this@AppViewModel.thermalGovernor.hardLimit -> delay(500)
-                    this@AppViewModel.thermalGovernor.softLimit -> delay(150)
-                    else -> delay(30)
-                }
+            } catch (e: Exception) {
+                return "Error: ${e.localizedMessage}"
             }
             val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
             val tps = completionTokenCount.toFloat() / (totalMs / 1000f).coerceAtLeast(0.001f)
