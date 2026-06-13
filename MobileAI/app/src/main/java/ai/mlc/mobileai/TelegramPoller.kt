@@ -25,6 +25,18 @@ private data class TgSendMessage(
     @SerializedName("chat_id") val chatId: Long,
     val text: String
 )
+private data class TgSendMessageResponse(
+    val ok: Boolean,
+    val result: TgSentMessage? = null
+)
+private data class TgSentMessage(
+    @SerializedName("message_id") val messageId: Long
+)
+private data class TgEditMessage(
+    @SerializedName("chat_id") val chatId: Long,
+    @SerializedName("message_id") val messageId: Long,
+    val text: String
+)
 
 class TelegramPoller(
     private val botToken: String,
@@ -124,18 +136,23 @@ class TelegramPoller(
                 sendMessage(chatId, "Phone IP: $ip\n\nTo update VM config: /ip $ip")
             }
             else -> {
-                sendMessage(chatId, "⏳ Processing…")
+                val processingMsgId = sendMessageForId(chatId, "⏳ Processing: \"${text.take(60)}${if (text.length > 60) "…" else ""}\"")
                 val response = try {
                     service.generateBlocking(text)
                 } catch (e: Exception) { "Error: ${e.message}" }
-                sendMessage(chatId, response)
+                val reply = "Q: ${text.take(100)}${if (text.length > 100) "…" else ""}\n\nA: $response"
+                if (processingMsgId != null) {
+                    editMessage(chatId, processingMsgId, reply)
+                } else {
+                    sendMessage(chatId, reply)
+                }
             }
         }
     }
 
     private fun sendMessage(chatId: Long, text: String) {
         try {
-            val payload = gson.toJson(TgSendMessage(chatId, text))
+            val payload = gson.toJson(TgSendMessage(chatId, text.truncateForTelegram()))
             val body = payload.toRequestBody("application/json".toMediaType())
             val req = Request.Builder().url("$baseUrl/sendMessage").post(body).build()
             client.newCall(req).execute().close()
@@ -143,4 +160,35 @@ class TelegramPoller(
             Log.e("TelegramPoller", "Send error: ${e.message}")
         }
     }
+
+    // Returns the message_id of the sent message, or null on failure
+    private fun sendMessageForId(chatId: Long, text: String): Long? {
+        return try {
+            val payload = gson.toJson(TgSendMessage(chatId, text.truncateForTelegram()))
+            val body = payload.toRequestBody("application/json".toMediaType())
+            val req = Request.Builder().url("$baseUrl/sendMessage").post(body).build()
+            val resp = client.newCall(req).execute()
+            val responseBody = resp.body?.string() ?: return null
+            gson.fromJson(responseBody, TgSendMessageResponse::class.java).result?.messageId
+        } catch (e: Exception) {
+            Log.e("TelegramPoller", "Send error: ${e.message}")
+            null
+        }
+    }
+
+    private fun editMessage(chatId: Long, messageId: Long, text: String) {
+        try {
+            val payload = gson.toJson(TgEditMessage(chatId, messageId, text.truncateForTelegram()))
+            val body = payload.toRequestBody("application/json".toMediaType())
+            val req = Request.Builder().url("$baseUrl/editMessageText").post(body).build()
+            client.newCall(req).execute().close()
+        } catch (e: Exception) {
+            Log.e("TelegramPoller", "Edit error: ${e.message}")
+        }
+    }
+
+    // Telegram max message length is 4096 chars
+    private fun String.truncateForTelegram(): String =
+        if (length > 4000) take(4000) + "\n…[truncated]" else this
 }
+
