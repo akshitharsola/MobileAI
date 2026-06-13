@@ -6,7 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +25,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
     var apiPort by remember { mutableStateOf(prefs.getInt("api_port", 8080).toString()) }
     var maxTokens by remember { mutableStateOf(prefs.getInt("max_tokens", 2048).toString()) }
     var noThink by remember { mutableStateOf(prefs.getBoolean("no_think", false)) }
+    var thinkMaxTokens by remember { mutableStateOf(prefs.getInt("think_max_tokens", 1024).toString()) }
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
     val service = activity.getInferenceService()
@@ -43,7 +44,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )
@@ -72,7 +73,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 singleLine = true
             )
 
-            Divider()
+            HorizontalDivider()
             Text("API Server", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = apiPort,
@@ -83,12 +84,21 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 singleLine = true
             )
 
-            Divider()
+            HorizontalDivider()
             Text("Inference", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = maxTokens,
                 onValueChange = { maxTokens = it.filter { c -> c.isDigit() } },
                 label = { Text("Max output tokens (256–4096)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = thinkMaxTokens,
+                onValueChange = { thinkMaxTokens = it.filter { c -> c.isDigit() } },
+                label = { Text("Think budget tokens (256–2048)") },
+                supportingText = { Text("Max tokens Qwen3 spends in <think> before being forced to answer") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
@@ -109,7 +119,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
             }
 
             if (modelIds.isNotEmpty()) {
-                Divider()
+                HorizontalDivider()
                 Text("Default Model", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Used when a request arrives and no model is loaded.",
@@ -151,6 +161,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
                         .putInt("max_tokens", (maxTokens.toIntOrNull() ?: 2048).coerceIn(256, 4096))
+                        .putInt("think_max_tokens", (thinkMaxTokens.toIntOrNull() ?: 1024).coerceIn(256, 2048))
                         .putBoolean("no_think", noThink)
                         .remove("context_len")
                         .putString("default_model", defaultModel)
@@ -171,9 +182,9 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 Text(savedMsg, color = MaterialTheme.colorScheme.primary)
             }
 
-            Divider()
+            HorizontalDivider()
             Text(
-                "About\n\nLocalis v2.7\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
+                "About\n\nLocalis v2.9\nDistributed Edge LLM Inference Node\n\nBased on MLCChat from the MLC-LLM project\nCopyright (c) 2023 MLC LLM Team\nLicensed under Apache 2.0\n\nExtensions Copyright (c) 2026 Akshit Harsola",
                 style = MaterialTheme.typography.bodySmall
             )
         }

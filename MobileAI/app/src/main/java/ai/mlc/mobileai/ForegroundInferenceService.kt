@@ -175,10 +175,10 @@ class ForegroundInferenceService : Service() {
                         // Pre-prefill delay proportional to prompt length: lets GPU drain from any prior work
                         val promptWords = prompt.split(" ").size
                         val prePrefillMs = (promptWords * 2L).coerceIn(100L, 2000L)
-                        Thread.sleep(prePrefillMs)
+                        delay(prePrefillMs)
                         val result = chatState?.generateResponse(prompt, cappedTokens) ?: "No model loaded"
                         // Post-inference GPU drain cooldown before releasing mutex for next request
-                        Thread.sleep(3000)
+                        delay(3000)
                         result
                     }
                 }

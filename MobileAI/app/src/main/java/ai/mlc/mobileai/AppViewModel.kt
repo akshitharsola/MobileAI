@@ -386,16 +386,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private var historyMessages = mutableListOf<ChatCompletionMessage>()
         private var modelLib = ""
         private var modelPath = ""
-        private val executorService = Executors.newSingleThreadExecutor()
         private val scope = CoroutineScope(Dispatchers.Main + Job())
         private var imageUri: Uri? = null
 
         private fun mainResetChat() {
             imageUri = null
-            executorService.submit {
+            scope.launch(Dispatchers.IO) {
                 callBackend { engine.reset() }
-                historyMessages = mutableListOf()
-                scope.launch { clearHistory(); switchToReady() }
+                withContext(Dispatchers.Main) {
+                    historyMessages = mutableListOf()
+                    clearHistory()
+                    switchToReady()
+                }
             }
         }
 
@@ -427,7 +429,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (modelChatState.value == ModelChatState.Ready) { prologue(); epilogue() }
             else if (modelChatState.value == ModelChatState.Generating) {
                 prologue()
-                executorService.submit { scope.launch { epilogue() } }
+                scope.launch { epilogue() }
             }
         }
 
@@ -437,9 +439,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         private fun mainTerminateChat(callback: () -> Unit) {
-            executorService.submit {
+            scope.launch(Dispatchers.IO) {
                 callBackend { engine.unload() }
-                scope.launch {
+                withContext(Dispatchers.Main) {
                     clearHistory()
                     modelName.value = ""
                     modelLib = ""
@@ -463,19 +465,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             this.modelName.value = modelConfig.modelId
             this.modelLib = modelConfig.modelLib
             this.modelPath = modelPath
-            executorService.submit {
-                scope.launch { Toast.makeText(application, "Loading model…", Toast.LENGTH_SHORT).show() }
-                if (!callBackend { engine.unload(); engine.reload(modelPath, modelConfig.modelLib) }) return@submit
-                scope.launch { Toast.makeText(application, "Ready to chat", Toast.LENGTH_SHORT).show(); switchToReady() }
+            scope.launch(Dispatchers.IO) {
+                withContext(Dispatchers.Main) { Toast.makeText(application, "Loading model…", Toast.LENGTH_SHORT).show() }
+                if (!callBackend { engine.unload(); engine.reload(modelPath, modelConfig.modelLib) }) return@launch
+                withContext(Dispatchers.Main) { Toast.makeText(application, "Ready to chat", Toast.LENGTH_SHORT).show(); switchToReady() }
             }
         }
 
         fun requestImageBitmap(uri: Uri?) {
             require(chatable())
             switchToGenerating()
-            executorService.submit {
+            scope.launch(Dispatchers.IO) {
                 imageUri = uri
-                scope.launch { report.value = "Image ready, ask your question."; if (modelChatState.value == ModelChatState.Generating) switchToReady() }
+                withContext(Dispatchers.Main) {
+                    report.value = "Image ready, ask your question."
+                    if (modelChatState.value == ModelChatState.Generating) switchToReady()
+                }
             }
         }
 
@@ -492,23 +497,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             switchToGenerating()
             appendMessage(MessageRole.User, prompt)
             appendMessage(MessageRole.Assistant, "")
-            var content = ChatCompletionMessageContent(text = prompt)
-            if (imageUri != null) {
-                val uri = imageUri
-                val bitmap = uri?.let { activity.contentResolver.openInputStream(it)?.use { i -> BitmapFactory.decodeStream(i) } }
-                if (bitmap != null) {
-                    val parts = listOf(
-                        mapOf("type" to "text", "text" to prompt),
-                        mapOf("type" to "image_url", "image_url" to bitmapToURL(bitmap))
-                    )
-                    content = ChatCompletionMessageContent(parts = parts)
-                }
-                imageUri = null
-            }
+            // Capture URI reference on main thread — actual decode happens in executor below
+            val capturedUri = imageUri
+            imageUri = null
             val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
             val maxTokens = prefs.getInt("max_tokens", 2048).coerceIn(256, 4096)
             val noThink = prefs.getBoolean("no_think", false)
-            executorService.submit {
+            val thinkMaxTokens = prefs.getInt("think_max_tokens", 1024).coerceIn(256, 2048)
+            scope.launch(Dispatchers.IO) {
+                // Image decode runs on IO thread
+                val content: ChatCompletionMessageContent = if (capturedUri != null) {
+                    val bitmap = activity.contentResolver.openInputStream(capturedUri)?.use { i ->
+                        BitmapFactory.decodeStream(i)
+                    }
+                    if (bitmap != null) {
+                        val parts = listOf(
+                            mapOf("type" to "text", "text" to prompt),
+                            mapOf("type" to "image_url", "image_url" to bitmapToURL(bitmap))
+                        )
+                        ChatCompletionMessageContent(parts = parts)
+                    } else {
+                        ChatCompletionMessageContent(text = prompt)
+                    }
+                } else {
+                    ChatCompletionMessageContent(text = prompt)
+                }
+                // Add to history on IO thread before launching inference — avoids race with Default thread
                 historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.user, content = content))
                 scope.launch(Dispatchers.Default) {
                     // Deprioritize inference so UI/system threads stay responsive
@@ -528,13 +542,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         var completionTokenCount = 0
                         var firstTokenMs = 0L
                         val startMs = System.currentTimeMillis()
+                        var lastUiUpdateMs = 0L
+                        var thinkTokenCount = 0
+                        var thinkBudgetInjected = false
+                        var tokensSinceBreath = 0
                         for (res in responses) {
                             val ok = try {
                                 for (choice in res.choices) {
                                     choice.delta.content?.let {
                                         if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
-                                        streaming += it.asText()
+                                        val token = it.asText()
+                                        streaming += token
                                         completionTokenCount++
+                                        tokensSinceBreath++
+                                        // Track think-phase tokens; inject </think> once budget is hit
+                                        if (!thinkBudgetInjected) {
+                                            val inThink = streaming.contains("<think>") && !streaming.contains("</think>")
+                                            if (inThink) {
+                                                thinkTokenCount++
+                                                if (thinkTokenCount >= thinkMaxTokens) {
+                                                    streaming += "\n[think budget reached]\n</think>\n"
+                                                    thinkBudgetInjected = true
+                                                }
+                                            }
+                                        }
                                     }
                                     if (choice.finish_reason == "length") truncated = true
                                 }
@@ -547,21 +578,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 false
                             }
                             if (!ok) return
-                            val (think, answer, thinkOpen) = parseThinkBlocks(streaming)
-                            val displayText = answer + if (truncated) " [truncated]" else ""
-                            withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, displayText, think, thinkOpen) }
+                            // GPU breath window every 10 tokens — lets display pipeline sneak in a frame
+                            if (tokensSinceBreath >= 10) {
+                                tokensSinceBreath = 0
+                                delay(50)
+                            }
+                            // Batch UI updates: push at most every 250ms to reduce IPC/Binder flooding
+                            val now = System.currentTimeMillis()
+                            if (now - lastUiUpdateMs >= 250L) {
+                                lastUiUpdateMs = now
+                                val (think, answer, thinkOpen) = parseThinkBlocks(streaming)
+                                val displayText = answer + if (truncated) " [truncated]" else ""
+                                withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, displayText, think, thinkOpen) }
+                            }
                             res.usage?.let { u -> withContext(Dispatchers.Main) { report.value = u.extra?.asTextLabel() ?: "" } }
-                            // Thermal-driven token pacing — gates GPU dispatch based on actual heat, not ghost CPU%
+                            // Thermal-driven token pacing — use delay() to suspend, not Thread.sleep()
                             when {
-                                this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
-                                this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
-                                else -> Thread.sleep(30)
+                                this@AppViewModel.thermalGovernor.hardLimit -> delay(500)
+                                this@AppViewModel.thermalGovernor.softLimit -> delay(150)
+                                else -> delay(30)
                             }
                         }
-                        if (streaming.isNotEmpty()) {
+                        // Final UI update — if think block never closed, force-close it
+                        val streamingFinal = if (streaming.contains("<think>") && !streaming.contains("</think>"))
+                            streaming + "\n[think exhausted — model produced no answer]\n</think>"
+                        else streaming
+                        val (thinkFinal, answerFinal, _) = parseThinkBlocks(streamingFinal)
+                        val displayFinal = answerFinal + if (truncated) " [truncated]" else ""
+                        withContext(Dispatchers.Main) { updateMessage(MessageRole.Assistant, displayFinal, thinkFinal, false) }
+                        if (streamingFinal.isNotEmpty()) {
                             // Store only the answer in history — re-feeding <think> content wastes context
-                            val (_, finalAnswer, _) = parseThinkBlocks(streaming)
-                            historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = finalAnswer.ifEmpty { streaming }))
+                            val (_, finalAnswer, _) = parseThinkBlocks(streamingFinal)
+                            historyMessages.add(ChatCompletionMessage(role = OpenAIProtocol.ChatCompletionRole.assistant, content = finalAnswer.ifEmpty { streamingFinal }))
                         } else {
                             if (historyMessages.isNotEmpty()) historyMessages.removeAt(historyMessages.size - 1)
                         }
@@ -604,6 +652,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val startMs = System.currentTimeMillis()
             var completionTokenCount = 0
             var truncated = false
+            var tokensSinceBreath = 0
 
             val responses = engine.chat.completions.create(
                 messages = msgs,
@@ -616,14 +665,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         if (firstTokenMs == 0L) firstTokenMs = System.currentTimeMillis() - startMs
                         result.append(it.asText())
                         completionTokenCount++
+                        tokensSinceBreath++
                     }
                     if (choice.finish_reason == "length") truncated = true
                 }
-                // Thermal-driven token pacing for headless path
+                // GPU breath window every 10 tokens — lets display pipeline sneak in a frame
+                if (tokensSinceBreath >= 10) {
+                    tokensSinceBreath = 0
+                    delay(50)
+                }
+                // Thermal-driven token pacing for headless path — delay() suspends, Thread.sleep() blocks
                 when {
-                    this@AppViewModel.thermalGovernor.hardLimit -> Thread.sleep(500)
-                    this@AppViewModel.thermalGovernor.softLimit -> Thread.sleep(150)
-                    else -> Thread.sleep(30)
+                    this@AppViewModel.thermalGovernor.hardLimit -> delay(500)
+                    this@AppViewModel.thermalGovernor.softLimit -> delay(150)
+                    else -> delay(30)
                 }
             }
             val totalMs = (System.currentTimeMillis() - startMs).coerceAtLeast(1)
