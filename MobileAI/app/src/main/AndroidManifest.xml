@@ -30,6 +30,9 @@
         <uses-native-library
             android:name="libOpenCL-pixel.so"
             android:required="false" />
+        <uses-native-library
+            android:name="libvndksupport.so"
+            android:required="false" />
 
         <activity
             android:name=".MainActivity"
