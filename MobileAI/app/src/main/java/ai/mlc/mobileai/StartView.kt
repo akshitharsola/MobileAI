@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,7 +32,7 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )
@@ -51,7 +52,7 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
             LazyColumn {
                 items(items = appViewModel.modelList, key = { it.id }) { modelState ->
                     ModelView(navController = navController, modelState = modelState, appViewModel = appViewModel)
-                    Divider()
+                    HorizontalDivider()
                 }
             }
         }
@@ -93,7 +94,7 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            Divider(modifier = Modifier.height(20.dp).width(1.dp))
+            VerticalDivider(modifier = Modifier.height(20.dp).width(1.dp))
             when (modelState.modelInitState.value) {
                 ModelInitState.Paused -> IconButton(onClick = { modelState.handleStart() }, modifier = Modifier.aspectRatio(1f).weight(1f)) {
                     Icon(Icons.Outlined.Download, "download")
@@ -105,7 +106,7 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
                     onClick = { modelState.startChat(); navController.navigate("chat") },
                     enabled = appViewModel.chatState.interruptable(),
                     modifier = Modifier.aspectRatio(1f).weight(1f)
-                ) { Icon(Icons.Outlined.Chat, "chat") }
+                ) { Icon(Icons.AutoMirrored.Outlined.Chat, "chat") }
                 else -> IconButton(enabled = false, onClick = {}, modifier = Modifier.aspectRatio(1f).weight(1f)) {
                     Icon(Icons.Outlined.Schedule, "pending")
                 }
@@ -117,7 +118,7 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
             }
         }
         LinearProgressIndicator(
-            progress = modelState.progress.value.toFloat() / modelState.total.value,
+            progress = { modelState.progress.value.toFloat() / modelState.total.value },
             modifier = Modifier.fillMaxWidth()
         )
         if (isDeletingModel) {

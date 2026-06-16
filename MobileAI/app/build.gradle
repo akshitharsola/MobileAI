@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace 'ai.mlc.mobileai'
+    namespace 'ai.localis.app'
     compileSdk 35
 
     defaultConfig {
-        applicationId "ai.mlc.mobileai"
+        applicationId "ai.localis.app"
         minSdk 26
         targetSdk 35
         versionCode 16
@@ -76,11 +76,11 @@ dependencies {
     implementation 'com.github.jeziellago:compose-markdown:0.5.2'
 
     // Ktor embedded HTTP server
-    implementation "io.ktor:ktor-server-core:2.3.7"
-    implementation "io.ktor:ktor-server-netty:2.3.7"
-    implementation "io.ktor:ktor-server-content-negotiation:2.3.7"
-    implementation "io.ktor:ktor-serialization-gson:2.3.7"
-    implementation "io.ktor:ktor-server-cors:2.3.7"
+    implementation "io.ktor:ktor-server-core:2.3.12"
+    implementation "io.ktor:ktor-server-netty:2.3.12"
+    implementation "io.ktor:ktor-server-content-negotiation:2.3.12"
+    implementation "io.ktor:ktor-serialization-gson:2.3.12"
+    implementation "io.ktor:ktor-server-cors:2.3.12"
 
     // OkHttp for Telegram polling
     implementation "com.squareup.okhttp3:okhttp:4.12.0"

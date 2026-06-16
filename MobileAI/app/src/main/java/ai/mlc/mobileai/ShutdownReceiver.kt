@@ -15,6 +15,6 @@ class ShutdownReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_SHUTDOWN = "ai.mlc.mobileai.SHUTDOWN"
+        const val ACTION_SHUTDOWN = "ai.localis.app.SHUTDOWN"
     }
 }

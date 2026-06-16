@@ -9,6 +9,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -187,7 +190,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             }
 
             StatusCard(
-                icon = Icons.Outlined.Send,
+                icon = Icons.AutoMirrored.Outlined.Send,
                 title = "Telegram Bot",
                 value = if (service?.telegramPoller != null) "Active" else "Inactive",
                 ok = service?.telegramPoller != null
@@ -271,7 +274,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     onClick = { navController.navigate("models") },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Filled.List, null, modifier = Modifier.padding(end = 4.dp))
+                    Icon(Icons.AutoMirrored.Filled.List, null, modifier = Modifier.padding(end = 4.dp))
                     Text("Models")
                 }
                 Button(
@@ -281,7 +284,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
+                    Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
                     Text(if (isLoaded) "Chat" else "Load Model")
                 }
             }
@@ -291,11 +294,11 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 OutlinedButton(
                     onClick = {
                         if (apiRunning) {
-                            service?.apiServer?.stop()
-                            service?.apiServer = null
+                            service!!.apiServer?.stop()
+                            service!!.apiServer = null
                         } else {
                             val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
-                            service?.startApiServer(prefs.getInt("api_port", 8080))
+                            service!!.startApiServer(prefs.getInt("api_port", 8080))
                         }
                     },
                     enabled = service != null,
@@ -307,11 +310,11 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 OutlinedButton(
                     onClick = {
                         if (botRunning) {
-                            service?.stopTelegramPoller()
+                            service!!.stopTelegramPoller()
                         } else {
                             val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
                             val token = prefs.getString("bot_token", "") ?: ""
-                            if (token.isNotBlank()) service?.startTelegramPoller(token)
+                            if (token.isNotBlank()) service!!.startTelegramPoller(token)
                         }
                     },
                     enabled = service != null,
@@ -333,7 +336,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Localis — Distributed Edge AI Node\nBased on MLC-LLM (Apache 2.0)",
+                "Localis — Distributed Edge AI Node\nPowered by Google LiteRT-LM",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

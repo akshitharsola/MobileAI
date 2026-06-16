@@ -30,12 +30,11 @@ import java.io.ByteArrayOutputStream
 import android.util.Base64
 import android.util.Log
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
+class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     val modelList = emptyList<ModelState>().toMutableStateList()
     val chatState = ChatState()
     private var showAlert = mutableStateOf(false)
     private var alertMessage = mutableStateOf("")
-    private val application = getApplication<Application>()
     private val gson = Gson()
 
     // Set by MainActivity after service bind — same mutex generateBlocking uses, so UI chat
@@ -44,8 +43,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
-    val systemMonitor = SystemMonitor(application)
-    val thermalGovernor = ThermalGovernor(application)
+    val systemMonitor = SystemMonitor(app)
+    val thermalGovernor = ThermalGovernor(app)
     val inferenceStats = mutableStateOf(InferenceStats())
     val inferenceHistory = emptyList<InferenceStats>().toMutableStateList()
 
@@ -67,7 +66,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateRamUsage() {
-        val am = application.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val am = app.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val mi = ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
         totalRamMB.value = mi.totalMem / (1024 * 1024)
@@ -84,7 +83,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun copyError() {
         require(showAlert.value)
-        val clipboard = application.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("MobileAI", errorMessage()))
     }
 
@@ -96,7 +95,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadAppConfig() {
         modelList.clear()
         try {
-            val bundledJson = application.assets.open(ModelConfigFilename).bufferedReader().use { it.readText() }
+            val bundledJson = app.assets.open(ModelConfigFilename).bufferedReader().use { it.readText() }
             val config = gson.fromJson(bundledJson, LocalisModelConfig::class.java)
             for (record in config.model_list) {
                 modelList.add(ModelState(record))
@@ -108,7 +107,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     inner class ModelState(val record: LocalisModelRecord) {
         var modelInitState = mutableStateOf(
-            if (LiteRtLmEngine.modelFileExists(application, record.filename)) ModelInitState.Finished
+            if (LiteRtLmEngine.modelFileExists(app, record.filename)) ModelInitState.Finished
             else ModelInitState.Paused
         )
         val progress = mutableStateOf(0)
@@ -122,7 +121,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         fun estimatedVramGB(): String =
             String.format("%.1f", record.estimated_size_bytes.toFloat() / (1024 * 1024 * 1024))
 
-        fun fileSizeMB(): Long = LiteRtLmEngine.modelFileSizeMB(application, record.filename)
+        fun fileSizeMB(): Long = LiteRtLmEngine.modelFileSizeMB(app, record.filename)
 
         fun startChat() { chatState.requestReloadChat(record) }
 
@@ -145,12 +144,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             downloadJob?.cancel()
             if (chatState.modelName.value == record.model_id) {
                 chatState.requestTerminateChat {
-                    File(application.getExternalFilesDir(""), record.filename).delete()
+                    File(app.getExternalFilesDir(""), record.filename).delete()
                     progress.value = 0; total.value = 1
                     modelInitState.value = ModelInitState.Paused
                 }
             } else {
-                File(application.getExternalFilesDir(""), record.filename).delete()
+                File(app.getExternalFilesDir(""), record.filename).delete()
                 progress.value = 0; total.value = 1
                 modelInitState.value = ModelInitState.Paused
             }
@@ -159,13 +158,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         fun handleClear() { handleDelete() }
 
         private suspend fun downloadModel() {
-            val destFile = File(application.getExternalFilesDir(""), record.filename)
+            val destFile = File(app.getExternalFilesDir(""), record.filename)
             if (destFile.exists()) {
                 withContext(Dispatchers.Main) { modelInitState.value = ModelInitState.Finished }
                 return
             }
             val hfUrl = "https://huggingface.co/litert-community/${record.model_id}/resolve/main/${record.filename}"
-            val tempFile = File(application.getExternalFilesDir(""), "${record.filename}.tmp")
+            val tempFile = File(app.getExternalFilesDir(""), "${record.filename}.tmp")
             try {
                 val connection = URL(hfUrl).openConnection()
                 val contentLength = connection.contentLengthLong
@@ -188,7 +187,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 tempFile.delete()
-                if (!destFile.exists()) throw Exception("Model not on HuggingFace and not present on device. Push via: adb push <file.litertlm> /sdcard/Android/data/ai.mlc.mobileai/files/")
+                if (!destFile.exists()) throw Exception("Model not on HuggingFace and not present on device. Push via: adb push <file.litertlm> /sdcard/Android/data/ai.localis.app/files/")
             }
             if (tempFile.exists()) tempFile.renameTo(destFile)
             withContext(Dispatchers.Main) { progress.value = 100; modelInitState.value = ModelInitState.Finished }
@@ -202,7 +201,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private var modelChatState = mutableStateOf(ModelChatState.Ready)
             @Synchronized get
             @Synchronized set
-        val engine = LiteRtLmEngine(application)
+        val engine = LiteRtLmEngine(app)
         private var historyMessages = mutableListOf<Pair<String, String>>() // (role, content)
         private var currentRecord: LocalisModelRecord? = null
         private val scope = CoroutineScope(Dispatchers.Main + Job())
@@ -253,12 +252,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             this.modelName.value = record.model_id
             this.currentRecord = record
             scope.launch(Dispatchers.IO) {
-                withContext(Dispatchers.Main) { Toast.makeText(application, "Loading model…", Toast.LENGTH_SHORT).show() }
+                withContext(Dispatchers.Main) { Toast.makeText(app, "Loading model…", Toast.LENGTH_SHORT).show() }
                 val ok = try {
                     engine.unload()
                     engine.load(
                         record.model_id,
-                        LiteRtLmEngine.modelFilePath(application, record.filename),
+                        LiteRtLmEngine.modelFilePath(app, record.filename),
                         record.backend
                     )
                     true
@@ -273,7 +272,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (!ok) return@launch
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(application, "Ready to chat", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(app, "Ready to chat", Toast.LENGTH_SHORT).show()
                     switchToReady()
                 }
             }
@@ -307,7 +306,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // Capture URI reference on main thread — actual decode happens in IO below
             val capturedUri = imageUri
             imageUri = null
-            val prefs = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            val prefs = app.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
             val maxTokens = prefs.getInt("max_tokens", 2048).coerceIn(256, 4096)
             val noThink = prefs.getBoolean("no_think", false)
             val thinkMaxTokens = prefs.getInt("think_max_tokens", 1024).coerceIn(256, 2048)
@@ -432,7 +431,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Used by ForegroundInferenceService for headless inference
         suspend fun generateResponse(prompt: String, maxTokens: Int = 512): String {
             if (!chatable()) return "Model not ready"
-            val noThink = application.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
+            val noThink = app.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
                 .getBoolean("no_think", false)
             val systemPrompt = if (noThink) "/no_think" else null
             val result = StringBuilder()

@@ -1,5 +1,5 @@
 // Based on MLCChat from MLC-LLM (https://github.com/mlc-ai/mlc-llm), Apache 2.0 License
-// Extended by Akshit Harsola — repackaged to ai.mlc.mobileai
+// Extended by Akshit Harsola
 package ai.mlc.mobileai
 
 import android.app.Activity
@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.*
@@ -40,11 +42,11 @@ fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, ac
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("MobileAI: " + chatState.modelName.value.split("-")[0], color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text("Localis: " + chatState.modelName.value.split("-")[0], color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }, enabled = chatState.interruptable()) {
-                        Icon(Icons.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 actions = {
@@ -72,7 +74,7 @@ fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, ac
                 return@Scaffold
             }
             Text(text = chatState.report.value, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(top = 5.dp))
-            Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 5.dp))
+            HorizontalDivider(thickness = 1.dp, modifier = Modifier.padding(vertical = 5.dp))
             LazyColumn(
                 modifier = Modifier.weight(9f),
                 verticalArrangement = Arrangement.spacedBy(5.dp, alignment = Alignment.Bottom),
@@ -84,7 +86,7 @@ fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, ac
                 }
                 item {}
             }
-            Divider(thickness = 1.dp, modifier = Modifier.padding(top = 5.dp))
+            HorizontalDivider(thickness = 1.dp, modifier = Modifier.padding(top = 5.dp))
             SendMessageView(chatState = chatState, activity)
         }
     }
@@ -207,6 +209,6 @@ fun SendMessageView(chatState: AppViewModel.ChatState, activity: Activity) {
             onClick = { localFocusManager.clearFocus(); chatState.requestGenerate(text, activity); text = "" },
             modifier = Modifier.aspectRatio(1f).weight(1f),
             enabled = text.isNotEmpty() && chatState.chatable()
-        ) { Icon(Icons.Filled.Send, "send") }
+        ) { Icon(Icons.AutoMirrored.Filled.Send, "send") }
     }
 }

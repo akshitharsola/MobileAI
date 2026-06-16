@@ -17,7 +17,7 @@ class ClipboardActionReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_SEND = "ai.mlc.mobileai.CLIPBOARD_SEND"
+        const val ACTION_SEND = "ai.localis.app.CLIPBOARD_SEND"
         const val EXTRA_PROMPT = "prompt"
     }
 }

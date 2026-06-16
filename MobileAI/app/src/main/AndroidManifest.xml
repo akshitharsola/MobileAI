@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="ai.mlc.mobileai">
+    package="ai.localis.app">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -62,7 +62,7 @@
             android:name=".ClipboardActionReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="ai.mlc.mobileai.CLIPBOARD_SEND" />
+                <action android:name="ai.localis.app.CLIPBOARD_SEND" />
             </intent-filter>
         </receiver>
 
@@ -70,7 +70,7 @@
             android:name=".ShutdownReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="ai.mlc.mobileai.SHUTDOWN" />
+                <action android:name="ai.localis.app.SHUTDOWN" />
             </intent-filter>
         </receiver>
 

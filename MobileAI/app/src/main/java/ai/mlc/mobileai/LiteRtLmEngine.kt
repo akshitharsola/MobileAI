@@ -73,13 +73,15 @@ class LiteRtLmEngine(private val context: Context) {
         val conversationConfig = ConversationConfig(
             systemInstruction = systemPrompt?.let { Contents.of(Content.Text(it)) },
             initialMessages = initialMessages,
-            samplerConfig = SamplerConfig(topK = 10, topP = 0.95f, temperature = 0.8f)
+            samplerConfig = SamplerConfig(topK = 10, topP = 0.95, temperature = 0.8)
         )
 
         val conversation = currentEngine.createConversation(conversationConfig)
         try {
             conversation.sendMessageAsync(prompt).collect { message ->
-                val text = message.text ?: ""
+                val text = message.contents.contents
+                    .filterIsInstance<Content.Text>()
+                    .joinToString("") { it.text }
                 if (text.isNotEmpty()) {
                     emit(text)
                 }
