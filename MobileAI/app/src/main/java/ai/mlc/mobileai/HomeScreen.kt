@@ -293,12 +293,13 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 val apiRunning = service?.apiServer != null
                 OutlinedButton(
                     onClick = {
+                        val svc = service ?: return@OutlinedButton
                         if (apiRunning) {
-                            service!!.apiServer?.stop()
-                            service!!.apiServer = null
+                            svc.apiServer?.stop()
+                            svc.apiServer = null
                         } else {
                             val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
-                            service!!.startApiServer(prefs.getInt("api_port", 8080))
+                            svc.startApiServer(prefs.getInt("api_port", 8080))
                         }
                     },
                     enabled = service != null,
@@ -309,12 +310,13 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                 val botRunning = service?.telegramPoller != null
                 OutlinedButton(
                     onClick = {
+                        val svc = service ?: return@OutlinedButton
                         if (botRunning) {
-                            service!!.stopTelegramPoller()
+                            svc.stopTelegramPoller()
                         } else {
                             val prefs = activity.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
                             val token = prefs.getString("bot_token", "") ?: ""
-                            if (token.isNotBlank()) service!!.startTelegramPoller(token)
+                            if (token.isNotBlank()) svc.startTelegramPoller(token)
                         }
                     },
                     enabled = service != null,

@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -144,26 +143,13 @@ class MainActivity : ComponentActivity() {
     fun getInferenceService(): ForegroundInferenceService? = inferenceService
 
     fun getLocalIpAddress(): String {
-        // Try WifiManager first (reliable on Wi-Fi)
-        try {
-            val wifiManager = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-            val ip = wifiManager.connectionInfo.ipAddress
-            if (ip != 0) {
-                return String.format(
-                    "%d.%d.%d.%d",
-                    ip and 0xff, ip shr 8 and 0xff, ip shr 16 and 0xff, ip shr 24 and 0xff
-                )
-            }
-        } catch (_: Exception) {}
-        // Fallback: enumerate network interfaces
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "unknown"
             for (iface in interfaces) {
                 if (!iface.isUp || iface.isLoopback) continue
                 for (addr in iface.inetAddresses) {
                     if (addr.isLoopbackAddress || addr.hostAddress?.contains(':') == true) continue
-                    val host = addr.hostAddress ?: continue
-                    return host
+                    return addr.hostAddress ?: continue
                 }
             }
         } catch (_: Exception) {}
