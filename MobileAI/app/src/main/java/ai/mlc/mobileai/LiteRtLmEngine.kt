@@ -110,7 +110,8 @@ data class LocalisModelRecord(
     val display_name: String,
     val filename: String,
     val estimated_size_bytes: Long,
-    val backend: String = "gpu"
+    val backend: String = "gpu",
+    val hf_repo: String = model_id
 )
 
 data class LocalisModelConfig(val model_list: List<LocalisModelRecord>)

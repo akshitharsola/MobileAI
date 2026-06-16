@@ -1,17 +1,19 @@
 {
   "model_list": [
     {
-      "model_id": "Qwen3-1.7B",
-      "display_name": "Qwen3 1.7B",
-      "filename": "Qwen3-1.7B.litertlm",
-      "estimated_size_bytes": 1500000000,
-      "backend": "gpu"
+      "model_id": "Gemma3-1B-NPU",
+      "display_name": "Gemma3 1B — NPU (SM8750)",
+      "filename": "Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm",
+      "hf_repo": "Gemma3-1B-IT",
+      "estimated_size_bytes": 800000000,
+      "backend": "npu"
     },
     {
-      "model_id": "Qwen3-4B",
-      "display_name": "Qwen3 4B",
-      "filename": "Qwen3-4B.litertlm",
-      "estimated_size_bytes": 3000000000,
+      "model_id": "Gemma3-1B-GPU",
+      "display_name": "Gemma3 1B — GPU",
+      "filename": "gemma3-1b-it-int4.litertlm",
+      "hf_repo": "Gemma3-1B-IT",
+      "estimated_size_bytes": 800000000,
       "backend": "gpu"
     }
   ]

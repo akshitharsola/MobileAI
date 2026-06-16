@@ -84,7 +84,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     fun copyError() {
         require(showAlert.value)
         val clipboard = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("MobileAI", errorMessage()))
+        clipboard.setPrimaryClip(ClipData.newPlainText("Localis", errorMessage()))
     }
 
     private fun issueAlert(error: String) {
@@ -163,7 +163,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.Main) { modelInitState.value = ModelInitState.Finished }
                 return
             }
-            val hfUrl = "https://huggingface.co/litert-community/${record.model_id}/resolve/main/${record.filename}"
+            val hfUrl = "https://huggingface.co/litert-community/${record.hf_repo}/resolve/main/${record.filename}"
             val tempFile = File(app.getExternalFilesDir(""), "${record.filename}.tmp")
             try {
                 val connection = URL(hfUrl).openConnection()
