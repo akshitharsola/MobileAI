@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="ai.localis.app">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -35,7 +34,7 @@
             android:required="false" />
 
         <activity
-            android:name=".MainActivity"
+            android:name="ai.mlc.mobileai.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.MobileAI">
@@ -46,12 +45,12 @@
         </activity>
 
         <service
-            android:name=".ForegroundInferenceService"
+            android:name="ai.mlc.mobileai.ForegroundInferenceService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
         <receiver
-            android:name=".BootReceiver"
+            android:name="ai.mlc.mobileai.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -59,7 +58,7 @@
         </receiver>
 
         <receiver
-            android:name=".ClipboardActionReceiver"
+            android:name="ai.mlc.mobileai.ClipboardActionReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="ai.localis.app.CLIPBOARD_SEND" />
@@ -67,7 +66,7 @@
         </receiver>
 
         <receiver
-            android:name=".ShutdownReceiver"
+            android:name="ai.mlc.mobileai.ShutdownReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="ai.localis.app.SHUTDOWN" />

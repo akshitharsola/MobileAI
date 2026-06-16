@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import ai.localis.app.R
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
