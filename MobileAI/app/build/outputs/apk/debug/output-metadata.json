@@ -4,17 +4,18 @@
     "type": "APK",
     "kind": "Directory"
   },
-  "applicationId": "ai.mlc.mobileai.debug",
+  "applicationId": "ai.localis.app.debug",
   "variantName": "debug",
   "elements": [
     {
       "type": "SINGLE",
       "filters": [],
       "attributes": [],
-      "versionCode": 1,
-      "versionName": "1.0",
+      "versionCode": 16,
+      "versionName": "4.0",
       "outputFile": "app-debug.apk"
     }
   ],
-  "elementType": "File"
+  "elementType": "File",
+  "minSdkVersionForDexing": 26
 }
