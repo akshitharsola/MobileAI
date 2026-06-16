@@ -163,14 +163,26 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.Main) { modelInitState.value = ModelInitState.Finished }
                 return
             }
+            val prefs = app.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
+            val hfToken = prefs.getString("hf_token", "") ?: ""
             val hfUrl = "https://huggingface.co/litert-community/${record.hf_repo}/resolve/main/${record.filename}"
             val tempFile = File(app.getExternalFilesDir(""), "${record.filename}.tmp")
             try {
-                val connection = URL(hfUrl).openConnection()
+                val connection = (URL(hfUrl).openConnection() as java.net.HttpURLConnection).apply {
+                    if (hfToken.isNotBlank()) setRequestProperty("Authorization", "Bearer $hfToken")
+                    connect()
+                }
+                val responseCode = connection.responseCode
+                if (responseCode == 401) {
+                    throw Exception("HuggingFace auth required. Add your HF token in Settings, and accept the model license on huggingface.co/litert-community/${record.hf_repo}")
+                }
+                if (responseCode !in 200..299) {
+                    throw Exception("Download failed: HTTP $responseCode")
+                }
                 val contentLength = connection.contentLengthLong
                 withContext(Dispatchers.Main) { total.value = if (contentLength > 0) 100 else 1 }
                 var bytesRead = 0L
-                val channel = Channels.newChannel(URL(hfUrl).openStream())
+                val channel = Channels.newChannel(connection.inputStream)
                 FileOutputStream(tempFile).use { out ->
                     val buffer = java.nio.ByteBuffer.allocate(65536)
                     while (true) {
@@ -187,7 +199,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 tempFile.delete()
-                if (!destFile.exists()) throw Exception("Model not on HuggingFace and not present on device. Push via: adb push <file.litertlm> /sdcard/Android/data/ai.localis.app/files/")
+                throw e
             }
             if (tempFile.exists()) tempFile.renameTo(destFile)
             withContext(Dispatchers.Main) { progress.value = 100; modelInitState.value = ModelInitState.Finished }

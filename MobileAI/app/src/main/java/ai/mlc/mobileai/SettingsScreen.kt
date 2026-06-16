@@ -28,6 +28,8 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
     var thinkMaxTokens by remember { mutableStateOf(prefs.getInt("think_max_tokens", 1024).toString()) }
     var showToken by remember { mutableStateOf(false) }
     var savedMsg by remember { mutableStateOf("") }
+    var hfToken by remember { mutableStateOf(prefs.getString("hf_token", "") ?: "") }
+    var showHfToken by remember { mutableStateOf(false) }
     val service = activity.getInferenceService()
 
     val downloadedModels = appViewModel.modelList.filter { it.modelInitState.value == ModelInitState.Finished }
@@ -58,6 +60,27 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text("HuggingFace", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Required to download models from litert-community (accept license on huggingface.co first)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = hfToken,
+                onValueChange = { hfToken = it },
+                label = { Text("HF Token (hf_…)") },
+                visualTransformation = if (showHfToken) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    TextButton(onClick = { showHfToken = !showHfToken }) {
+                        Text(if (showHfToken) "Hide" else "Show")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            HorizontalDivider()
             Text("Telegram Bot", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(
                 value = botToken,
@@ -158,6 +181,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                     val newToken = botToken.trim()
                     val newPort = apiPort.toIntOrNull() ?: 8080
                     prefs.edit()
+                        .putString("hf_token", hfToken.trim())
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
                         .putInt("max_tokens", (maxTokens.toIntOrNull() ?: 2048).coerceIn(256, 4096))
