@@ -39,6 +39,7 @@ class ForegroundInferenceService : Service() {
     var chatState: AppViewModel.ChatState? = null
     var appViewModel: AppViewModel? = null
     var apiServer: ApiServer? = null
+    @Volatile var apiServerStarting: Boolean = false
     var telegramPoller: TelegramPoller? = null
 
     inner class LocalBinder : Binder() {
@@ -90,8 +91,27 @@ class ForegroundInferenceService : Service() {
 
     fun startApiServer(port: Int) {
         apiServer = ApiServer(this, port)
-        serviceScope.launch { apiServer!!.start() }
+        apiServerStarting = true
+        serviceScope.launch {
+            apiServer!!.start()
+            apiServerStarting = false
+        }
         updateNotification("API server running on :$port")
+    }
+
+    suspend fun testApiServerLoopback(port: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val url = java.net.URL("http://127.0.0.1:$port/health")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            conn.requestMethod = "GET"
+            val code = conn.responseCode
+            conn.disconnect()
+            code == 200
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun startTelegramPoller(botToken: String) {
