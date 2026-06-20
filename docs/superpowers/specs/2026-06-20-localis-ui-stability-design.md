@@ -47,6 +47,19 @@ A screenshot confirmed the card shows "running" (green check) with **no model lo
 - "Starting" state needs a transient flag set when `startApiServer()` is called and cleared once `ApiServer.start()`'s `embeddedServer(...).start(wait = false)` call returns — currently fire-and-forget via `serviceScope.launch`.
 - Self-test uses a simple HTTP client (e.g. Ktor client or `HttpURLConnection`) against `127.0.0.1:<port>/health`, on a background coroutine, with a short timeout (e.g. 3s).
 
+### IP Address Reliability
+
+**Root cause investigation:** `MainActivity.getLocalIpAddress()` (`MainActivity.kt:145-157`) loops all "up", non-loopback network interfaces and returns the **first** IPv4 address found — with no preference for the active Wi-Fi interface over mobile data (`rmnet`), USB tethering, or VPN tunnels. If multiple interfaces are up, the displayed/copied IP can silently be the wrong one — real, but unreachable from another device on the same Wi-Fi. This was confirmed as a plausible root cause; a prior investigation (project memory, Jun 11) into "IP copy button failure" ruled out clipboard corruption — that bug (stale closure, background-thread clipboard write) was already fixed (`HomeScreen.kt:154-169` recomputes the URL at click time; `ClipboardMonitor.kt` already excludes the `api_url` label and writes on `Dispatchers.Main`). The remaining failure mode is address selection, not clipboard mechanics.
+
+**Fix 1 — prefer Wi-Fi interface:** update `getLocalIpAddress()` to explicitly look for an interface named `wlan0` (or matching Android's Wi-Fi naming) first, only falling back to the first non-loopback IPv4 found if no Wi-Fi interface is up. This directly targets the most likely root cause.
+
+**Fix 2 — manual IP:port override (Settings):** add an optional text field in `SettingsScreen.kt`'s existing "API Server" section (next to the current Port field, `SettingsScreen.kt:99-108`), e.g. "Manual IP override (optional)". When set, the Home screen's API Server card and the copy-to-clipboard action use this value instead of `getLocalIpAddress()`'s result. When blank (default), auto-detection (with the Fix 1 improvement) is used as today. This is a fallback for edge cases auto-detection still can't resolve (e.g., multiple simultaneous Wi-Fi-like interfaces) — not the primary mechanism.
+
+**Implementation notes:**
+- Store the override in the existing `mobileai` SharedPreferences (e.g. key `"manual_ip"`), alongside `api_port`.
+- `HomeScreen.kt`'s `apiUrl` construction (composition-time preview at line ~147 and click-time recompute at line ~162) both need to check for a non-blank manual override before calling `activity.getLocalIpAddress()`.
+- No validation beyond basic non-blank check is needed — an invalid manual IP simply won't connect, same failure mode as today, and the self-test (loopback) is unaffected since it always targets `127.0.0.1`.
+
 ## Sub-Project 2: Home Screen Declutter
 
 ### Problem
