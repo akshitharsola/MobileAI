@@ -23,6 +23,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
     val prefs = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE)
     var botToken by remember { mutableStateOf(prefs.getString("bot_token", "") ?: "") }
     var apiPort by remember { mutableStateOf(prefs.getInt("api_port", 8080).toString()) }
+    var manualIp by remember { mutableStateOf(prefs.getString("manual_ip", "") ?: "") }
     var maxTokens by remember { mutableStateOf(prefs.getInt("max_tokens", 2048).toString()) }
     var noThink by remember { mutableStateOf(prefs.getBoolean("no_think", false)) }
     var thinkMaxTokens by remember { mutableStateOf(prefs.getInt("think_max_tokens", 1024).toString()) }
@@ -106,6 +107,14 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+            OutlinedTextField(
+                value = manualIp,
+                onValueChange = { manualIp = it.trim() },
+                label = { Text("Manual IP override (optional)") },
+                supportingText = { Text("Leave blank to auto-detect. Use if the auto-detected IP isn't reachable from other devices.") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
 
             HorizontalDivider()
             Text("Inference", style = MaterialTheme.typography.titleMedium)
@@ -184,6 +193,7 @@ fun SettingsScreen(navController: NavController, activity: MainActivity, appView
                         .putString("hf_token", hfToken.trim())
                         .putString("bot_token", newToken)
                         .putInt("api_port", newPort)
+                        .putString("manual_ip", manualIp)
                         .putInt("max_tokens", (maxTokens.toIntOrNull() ?: 2048).coerceIn(256, 4096))
                         .putInt("think_max_tokens", (thinkMaxTokens.toIntOrNull() ?: 1024).coerceIn(256, 2048))
                         .putBoolean("no_think", noThink)
