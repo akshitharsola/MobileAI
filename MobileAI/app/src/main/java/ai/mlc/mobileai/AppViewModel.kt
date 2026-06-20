@@ -43,7 +43,6 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
-    val systemMonitor = SystemMonitor(app)
     val thermalGovernor = ThermalGovernor(app)
     val inferenceStats = mutableStateOf(InferenceStats())
     val inferenceHistory = emptyList<InferenceStats>().toMutableStateList()
@@ -55,13 +54,11 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     init {
         loadAppConfig()
         updateRamUsage()
-        systemMonitor.start()
         thermalGovernor.start()
     }
 
     override fun onCleared() {
         super.onCleared()
-        systemMonitor.stop()
         thermalGovernor.stop()
     }
 
