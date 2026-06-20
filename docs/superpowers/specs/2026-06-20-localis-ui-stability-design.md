@@ -70,9 +70,12 @@ A screenshot confirmed the card shows "running" (green check) with **no model lo
 
 **Remove:**
 - `SystemUsageCard` composable and its rendering (CPU graph, Thermal row) — `HomeScreen.kt:138-143, 372-440`
-- Underlying CPU/Thermal data plumbing: `cpuHistory` state + `LaunchedEffect(systemStats.cpuPercent)` (`HomeScreen.kt:58-64`), `systemStats`/`thermalInfo` collection (`HomeScreen.kt:50-51`), and the `CpuGraph` composable (`HomeScreen.kt:526-557`)
-- `SystemMonitor`/`ThermalGovernor` polling hookup from `AppViewModel` if no longer consumed elsewhere (verify no other screen reads `appViewModel.systemMonitor` / `appViewModel.thermalGovernor` before deleting the underlying classes; if unused elsewhere, delete `SystemMonitor.kt` polling logic and thermal governor wiring)
+- Underlying CPU/Thermal data plumbing from `HomeScreen.kt` only: `cpuHistory` state + `LaunchedEffect(systemStats.cpuPercent)` (`HomeScreen.kt:58-64`), `systemStats`/`thermalInfo` collection (`HomeScreen.kt:50-51`), and the `CpuGraph` composable (`HomeScreen.kt:526-557`)
 - Standalone `Telegram Bot` `StatusCard` (`HomeScreen.kt:192-197`) — status remains visible via the Start/Stop Bot button label in Quick Actions
+
+**Important correction (confirmed during planning):** `SystemMonitor` and `ThermalGovernor` are NOT equivalent — `ThermalGovernor` is load-bearing beyond the UI. `AppViewModel.kt:389-390` and `:473-474` use `thermalGovernor.hardLimit`/`softLimit` to throttle inference (delay 500ms/150ms) as real thermal protection during generation. `SystemMonitor` (CPU% polling) has no consumers outside `HomeScreen.kt` and is pure UI.
+- **Delete `SystemMonitor.kt` entirely** (class + its `start()`/`stop()` calls in `AppViewModel.kt:46,58,64`) — confirmed unused elsewhere.
+- **Keep `ThermalGovernor` and its throttling fully intact** in `AppViewModel.kt` — only remove `HomeScreen.kt`'s subscription/display (`thermalInfo` collection and the Thermal row in `SystemUsageCard`). The governor keeps running in the background for inference throttling; it's simply no longer rendered on Home.
 
 **Fold RAM into Model card:**
 - Drop the standalone RAM `StatusCard` (`HomeScreen.kt:130-135`)
