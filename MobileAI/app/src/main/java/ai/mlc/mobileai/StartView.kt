@@ -2,6 +2,7 @@
 // Extended by Akshit Harsola — renamed package, kept model manager UI
 package ai.mlc.mobileai
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -9,8 +10,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.res.painterResource
+import ai.localis.app.R
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -47,7 +49,7 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
             modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 10.dp)
         ) {
             Text(
-                text = "Tap download to fetch a model. Tap chat to start chatting.",
+                text = "Tap download to fetch a model. Load and chat from the Home screen.",
                 modifier = Modifier.padding(vertical = 8.dp),
                 style = MaterialTheme.typography.bodySmall
             )
@@ -65,9 +67,9 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
                         )
                     }
                     items(items = models, key = { it.id }) { modelState ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 14.dp)) {
                             ModelBadge(family = family)
-                            Spacer(Modifier.width(12.dp))
+                            Spacer(Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 ModelView(navController = navController, modelState = modelState, appViewModel = appViewModel)
                             }
@@ -96,19 +98,34 @@ private fun familyOf(modelId: String): String = when {
 
 @Composable
 private fun ModelBadge(family: String) {
-    val (letter, color) = when (family) {
-        "Gemma" -> "G" to MaterialTheme.colorScheme.primary
-        "Qwen" -> "Q" to MaterialTheme.colorScheme.tertiary
-        "DeepSeek" -> "D" to MaterialTheme.colorScheme.secondary
-        else -> "?" to MaterialTheme.colorScheme.outline
+    val logoRes = when (family) {
+        "Gemma" -> R.drawable.ic_model_gemma
+        "Qwen" -> R.drawable.ic_model_qwen
+        "DeepSeek" -> R.drawable.ic_model_deepseek
+        else -> null
     }
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .background(color, shape = CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(letter, color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelLarge)
+    if (logoRes != null) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(logoRes),
+                contentDescription = family,
+                modifier = Modifier.size(40.dp)
+            )
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(MaterialTheme.colorScheme.outline, shape = CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("?", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.titleLarge)
+        }
     }
 }
 
@@ -134,9 +151,9 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
             modifier = Modifier.fillMaxWidth().wrapContentHeight()
         ) {
             Column(modifier = Modifier.weight(8f)) {
-                Text(text = modelState.modelConfig.modelId, textAlign = TextAlign.Left)
+                Text(text = modelState.modelConfig.modelId, textAlign = TextAlign.Left, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    text = "~${modelState.estimatedVramGB()} GB VRAM | ${modelState.fileSizeMB()} MB on disk",
+                    text = "~${modelState.estimatedVramGB()} GB",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -148,18 +165,11 @@ fun ModelView(navController: NavController, modelState: AppViewModel.ModelState,
                 ModelInitState.Downloading -> IconButton(onClick = { modelState.handlePause() }, modifier = Modifier.aspectRatio(1f).weight(1f)) {
                     Icon(Icons.Outlined.Pause, "pause")
                 }
-                ModelInitState.Finished -> IconButton(
-                    onClick = { modelState.startChat(); navController.navigate("chat") },
-                    enabled = appViewModel.chatState.interruptable(),
-                    modifier = Modifier.aspectRatio(1f).weight(1f)
-                ) { Icon(Icons.AutoMirrored.Outlined.Chat, "chat") }
+                ModelInitState.Finished -> IconButton(onClick = { isDeletingModel = true }, modifier = Modifier.aspectRatio(1f).weight(1f)) {
+                    Icon(Icons.Outlined.Delete, "delete", tint = MaterialTheme.colorScheme.error)
+                }
                 else -> IconButton(enabled = false, onClick = {}, modifier = Modifier.aspectRatio(1f).weight(1f)) {
                     Icon(Icons.Outlined.Schedule, "pending")
-                }
-            }
-            if (modelState.modelInitState.value in listOf(ModelInitState.Downloading, ModelInitState.Paused, ModelInitState.Finished)) {
-                IconButton(onClick = { isDeletingModel = true }, modifier = Modifier.aspectRatio(1f).weight(1f)) {
-                    Icon(Icons.Outlined.Delete, "delete", tint = MaterialTheme.colorScheme.error)
                 }
             }
         }

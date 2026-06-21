@@ -118,8 +118,6 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         fun estimatedVramGB(): String =
             String.format("%.1f", record.estimated_size_bytes.toFloat() / (1024 * 1024 * 1024))
 
-        fun fileSizeMB(): Long = LiteRtLmEngine.modelFileSizeMB(app, record.filename)
-
         fun startChat() { chatState.requestReloadChat(record) }
 
         fun handleStart() {
