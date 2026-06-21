@@ -2,5 +2,6 @@
 <resources>
     <style name="Theme.MobileAI" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 </resources>

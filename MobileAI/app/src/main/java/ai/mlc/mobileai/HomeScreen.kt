@@ -107,11 +107,13 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             // ── System Status ──────────────────────────────────────────────
             Text("System Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
+            val reloadingModel = appViewModel.chatState.isReloading()
             StatusCardWithSubtitle(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
                 value = when {
                     offloading -> "Offloading…"
+                    reloadingModel -> "Loading ${modelName.substringBefore("-q4f")}…"
                     isLoaded -> modelName.substringBefore("-q4f")
                     else -> "No model loaded"
                 },
@@ -277,11 +279,19 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                                         }
                                     }
                                 } else {
+                                    val reloadingThis = appViewModel.chatState.isReloading() && modelName == m.modelConfig.modelId
                                     Button(
                                         onClick = { m.startChat() },
+                                        enabled = !reloadingThis,
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                     ) {
-                                        Text("Load", style = MaterialTheme.typography.labelMedium)
+                                        if (reloadingThis) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Loading…", style = MaterialTheme.typography.labelMedium)
+                                        } else {
+                                            Text("Load", style = MaterialTheme.typography.labelMedium)
+                                        }
                                     }
                                 }
                             }
@@ -302,15 +312,23 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     Icon(Icons.AutoMirrored.Filled.List, null, modifier = Modifier.padding(end = 4.dp))
                     Text("Models")
                 }
+                val reloading = appViewModel.chatState.isReloading()
                 Button(
                     onClick = {
                         if (isLoaded) navController.navigate("chat")
                         else navController.navigate("models")
                     },
+                    enabled = !reloading,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
-                    Text(if (isLoaded) "Chat" else "Load Model")
+                    if (reloading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Loading…")
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
+                        Text(if (isLoaded) "Chat" else "Load Model")
+                    }
                 }
             }
 

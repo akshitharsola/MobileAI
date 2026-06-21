@@ -501,6 +501,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         fun interruptable(): Boolean = modelChatState.value == ModelChatState.Ready ||
                 modelChatState.value == ModelChatState.Generating ||
                 modelChatState.value == ModelChatState.Failed
+        fun isReloading(): Boolean = modelChatState.value == ModelChatState.Reloading
     }
 }
 
