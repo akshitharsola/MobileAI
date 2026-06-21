@@ -2,10 +2,12 @@
 // Extended by Akshit Harsola — renamed package, kept model manager UI
 package ai.mlc.mobileai
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Chat
@@ -49,10 +51,29 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
                 modifier = Modifier.padding(vertical = 8.dp),
                 style = MaterialTheme.typography.bodySmall
             )
+            val grouped = appViewModel.modelList.groupBy { familyOf(it.modelConfig.modelId) }
+            val familyOrder = listOf("Gemma", "Qwen", "DeepSeek", "Other")
             LazyColumn {
-                items(items = appViewModel.modelList, key = { it.id }) { modelState ->
-                    ModelView(navController = navController, modelState = modelState, appViewModel = appViewModel)
-                    HorizontalDivider()
+                familyOrder.forEach { family ->
+                    val models = grouped[family] ?: return@forEach
+                    item(key = "header-$family") {
+                        Text(
+                            text = family,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    items(items = models, key = { it.id }) { modelState ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 12.dp)) {
+                            ModelBadge(family = family)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                ModelView(navController = navController, modelState = modelState, appViewModel = appViewModel)
+                            }
+                        }
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -63,6 +84,31 @@ fun StartView(navController: NavController, appViewModel: AppViewModel) {
                 error = appViewModel.errorMessage()
             )
         }
+    }
+}
+
+private fun familyOf(modelId: String): String = when {
+    modelId.startsWith("Gemma", ignoreCase = true) -> "Gemma"
+    modelId.startsWith("Qwen", ignoreCase = true) -> "Qwen"
+    modelId.startsWith("DeepSeek", ignoreCase = true) -> "DeepSeek"
+    else -> "Other"
+}
+
+@Composable
+private fun ModelBadge(family: String) {
+    val (letter, color) = when (family) {
+        "Gemma" -> "G" to MaterialTheme.colorScheme.primary
+        "Qwen" -> "Q" to MaterialTheme.colorScheme.tertiary
+        "DeepSeek" -> "D" to MaterialTheme.colorScheme.secondary
+        else -> "?" to MaterialTheme.colorScheme.outline
+    }
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .background(color, shape = CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(letter, color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelLarge)
     }
 }
 
