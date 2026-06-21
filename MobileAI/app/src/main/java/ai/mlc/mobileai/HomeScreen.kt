@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -108,7 +107,7 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             // ── System Status ──────────────────────────────────────────────
             Text("System Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-            StatusCard(
+            StatusCardWithSubtitle(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
                 value = when {
@@ -116,14 +115,8 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     isLoaded -> modelName.substringBefore("-q4f")
                     else -> "No model loaded"
                 },
+                subtitle = "${ramUsed}MB / ${ramTotal}MB RAM",
                 ok = isLoaded && !offloading
-            )
-
-            StatusCard(
-                icon = Icons.Outlined.Storage,
-                title = "RAM",
-                value = "${ramUsed}MB / ${ramTotal}MB used",
-                ok = ramUsed < ramTotal * 0.85
             )
 
             val apiServerStarting = service?.apiServerStarting == true
@@ -227,13 +220,6 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     }
                 }
             }
-
-            StatusCard(
-                icon = Icons.AutoMirrored.Outlined.Send,
-                title = "Telegram Bot",
-                value = if (service?.telegramPoller != null) "Active" else "Inactive",
-                ok = service?.telegramPoller != null
-            )
 
             // ── Inference History ──────────────────────────────────────────
             if (inferenceHistory.isNotEmpty()) {
@@ -397,6 +383,30 @@ private fun StatusCard(icon: ImageVector, title: String, value: String, ok: Bool
             Column {
                 Text(title, style = MaterialTheme.typography.labelMedium)
                 Text(value, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (ok) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                null,
+                tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusCardWithSubtitle(icon: ImageVector, title: String, value: String, subtitle: String, ok: Boolean) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(icon, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            Column {
+                Text(title, style = MaterialTheme.typography.labelMedium)
+                Text(value, style = MaterialTheme.typography.bodyMedium)
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.weight(1f))
             Icon(
