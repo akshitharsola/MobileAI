@@ -146,6 +146,17 @@ class ForegroundInferenceService : Service() {
         return true
     }
 
+    // Polls until chatState reports Ready with the given model loaded, or timeoutMs elapses.
+    suspend fun awaitModelReady(modelId: String, timeoutMs: Long = 120_000L): Boolean {
+        val state = chatState ?: return false
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (state.chatable() && state.modelName.value == modelId) return true
+            delay(500)
+        }
+        return state.chatable() && state.modelName.value == modelId
+    }
+
     // Ensure a model is loaded before generating. Loads default if nothing loaded.
     // Blocks until model is ready (up to 120s).
     private suspend fun ensureModelLoaded(preferredModelId: String? = null): Boolean {

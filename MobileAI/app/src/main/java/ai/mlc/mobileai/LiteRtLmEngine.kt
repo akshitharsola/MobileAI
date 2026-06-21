@@ -111,7 +111,8 @@ data class LocalisModelRecord(
     val filename: String,
     val estimated_size_bytes: Long,
     val backend: String = "gpu",
-    val hf_repo: String = model_id
+    val hf_repo: String = model_id,
+    val hf_org: String = "litert-community"
 )
 
 data class LocalisModelConfig(val model_list: List<LocalisModelRecord>)

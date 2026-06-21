@@ -160,7 +160,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             val prefs = app.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
             val hfToken = prefs.getString("hf_token", "") ?: ""
-            val hfUrl = "https://huggingface.co/litert-community/${record.hf_repo}/resolve/main/${record.filename}"
+            val hfUrl = "https://huggingface.co/${record.hf_org}/${record.hf_repo}/resolve/main/${record.filename}"
             val tempFile = File(app.getExternalFilesDir(""), "${record.filename}.tmp")
             try {
                 val connection = (URL(hfUrl).openConnection() as java.net.HttpURLConnection).apply {
@@ -169,7 +169,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
                 val responseCode = connection.responseCode
                 if (responseCode == 401) {
-                    throw Exception("HuggingFace auth required. Add your HF token in Settings, and accept the model license on huggingface.co/litert-community/${record.hf_repo}")
+                    throw Exception("HuggingFace auth required. Add your HF token in Settings, and accept the model license on huggingface.co/${record.hf_org}/${record.hf_repo}")
                 }
                 if (responseCode !in 200..299) {
                     throw Exception("Download failed: HTTP $responseCode")

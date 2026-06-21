@@ -71,6 +71,24 @@
       "hf_repo": "gemma-4-E4B-it-litert-lm",
       "estimated_size_bytes": 3659530240,
       "backend": "gpu"
+    },
+    {
+      "model_id": "Gemma3-1B-ekv8192",
+      "display_name": "Gemma3 1B — GPU (extended 8K context)",
+      "filename": "model.litertlm",
+      "hf_repo": "Gemma3-1B-IT-ekv8192",
+      "hf_org": "Akshit03",
+      "estimated_size_bytes": 1105838080,
+      "backend": "gpu"
+    },
+    {
+      "model_id": "Qwen2.5-1.5B-ekv8192",
+      "display_name": "Qwen2.5 1.5B — GPU (extended 8K context)",
+      "filename": "model.litertlm",
+      "hf_repo": "Qwen2.5-1.5B-IT-ekv8192",
+      "hf_org": "Akshit03",
+      "estimated_size_bytes": 1684566016,
+      "backend": "gpu"
     }
   ]
 }
