@@ -113,6 +113,11 @@ data class LocalisModelRecord(
     val backend: String = "gpu",
     val hf_repo: String = model_id,
     val hf_org: String = "litert-community"
-)
+) {
+    // Several model_ids share the generic HF filename "model.litertlm"; namespace
+    // on-device storage by model_id so they don't overwrite each other on disk.
+    val localFilename: String
+        get() = if (filename == "model.litertlm") "${model_id}.litertlm" else filename
+}
 
 data class LocalisModelConfig(val model_list: List<LocalisModelRecord>)

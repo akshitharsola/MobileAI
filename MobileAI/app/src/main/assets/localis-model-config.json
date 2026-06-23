@@ -89,6 +89,24 @@
       "hf_org": "Akshit03",
       "estimated_size_bytes": 1684566016,
       "backend": "gpu"
+    },
+    {
+      "model_id": "Qwen3-4B-ekv8192",
+      "display_name": "Qwen3 4B — GPU (extended 8K context, ⚠ experimental)",
+      "filename": "model.litertlm",
+      "hf_repo": "Qwen3-4B-IT-ekv8192",
+      "hf_org": "Akshit03",
+      "estimated_size_bytes": 4059223584,
+      "backend": "gpu"
+    },
+    {
+      "model_id": "Qwen3-8B-ekv8192",
+      "display_name": "Qwen3 8B — GPU (extended 8K context, largest)",
+      "filename": "model.litertlm",
+      "hf_repo": "Qwen3-8B-IT-ekv8192",
+      "hf_org": "Akshit03",
+      "estimated_size_bytes": 8236630256,
+      "backend": "gpu"
     }
   ]
 }

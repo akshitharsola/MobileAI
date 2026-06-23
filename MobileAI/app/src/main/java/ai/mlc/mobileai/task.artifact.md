@@ -9,6 +9,12 @@
 - [x] Offload image processing to `Dispatchers.IO` in `requestGenerate`
 - [x] Update `themes.xml` to `Theme.AppCompat.DayNight.NoActionBar` (Verified existing)
 - [x] Enable `android:enableOnBackInvokedCallback="true"` in `AndroidManifest.xml` (Verified existing)
-- [/] Verify fixes
+- [x] Verify fixes
     - [x] Run static analysis on modified files
-    - [ ] Manual verification on device (Optional if requested by user)
+    - [x] Manual verification on device (Optional if requested by user)
+- [x] Logcat Analysis (Manual Input)
+    - [x] Analyze provided Logcat snippet
+    - [x] Create `LOGCAT_ANALYSIS_20260613.md` with findings
+- [x] New Logcat Analysis (Manual Input)
+    - [x] Analyze second provided Logcat snippet
+    - [x] Create `LOGCAT_ANALYSIS_20260613_V2.md` with findings
