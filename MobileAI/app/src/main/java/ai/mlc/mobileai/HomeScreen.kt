@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -33,9 +32,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private enum class ApiCardState { STOPPED, STARTING, RUNNING_NO_MODEL, RUNNING_READY }
 
 @ExperimentalMaterial3Api
 @Composable
@@ -47,21 +49,10 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
     val modelList = appViewModel.modelList
     val service = activity.getInferenceService()
     var offloading by remember { mutableStateOf(false) }
-    val systemStats by appViewModel.systemMonitor.stats.collectAsState()
-    val thermalInfo by appViewModel.thermalGovernor.state.collectAsState()
     val inferenceStats = appViewModel.inferenceStats.value
     val inferenceHistory = appViewModel.inferenceHistory
     var showShutdownDialog by remember { mutableStateOf(false) }
     var inferenceHistoryExpanded by remember { mutableStateOf(false) }
-
-    // Keep last 30 CPU samples (~60s of history at 2s polling)
-    val cpuHistory = remember { mutableStateListOf<Float>() }
-    LaunchedEffect(systemStats.cpuPercent) {
-        if (systemStats.cpuPercent >= 0f) {
-            cpuHistory.add(systemStats.cpuPercent)
-            if (cpuHistory.size > 30) cpuHistory.removeAt(0)
-        }
-    }
 
     // Poll RAM every 3s
     LaunchedEffect(Unit) {
@@ -116,42 +107,61 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
             // ── System Status ──────────────────────────────────────────────
             Text("System Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-            StatusCard(
+            val reloadingModel = appViewModel.chatState.isReloading()
+            StatusCardWithSubtitle(
                 icon = Icons.Outlined.Memory,
                 title = "Model",
                 value = when {
                     offloading -> "Offloading…"
+                    reloadingModel -> "Loading ${modelName.substringBefore("-q4f")}…"
                     isLoaded -> modelName.substringBefore("-q4f")
                     else -> "No model loaded"
                 },
+                subtitle = "${ramUsed}MB / ${ramTotal}MB RAM",
                 ok = isLoaded && !offloading
             )
 
-            StatusCard(
-                icon = Icons.Outlined.Storage,
-                title = "RAM",
-                value = "${ramUsed}MB / ${ramTotal}MB used",
-                ok = ramUsed < ramTotal * 0.85
-            )
-
-            // ── System Usage Graph Card ────────────────────────────────────
-            SystemUsageCard(
-                cpuPercent = systemStats.cpuPercent,
-                cpuHistory = cpuHistory,
-                thermalInfo = thermalInfo,
-                thermalAvailable = systemStats.thermalAvailable
-            )
-
-            val apiRunningForCard = service?.apiServer != null
+            val apiServerStarting = service?.apiServerStarting == true
+            val apiServerObj = service?.apiServer
+            val modelLoadedForCard = service?.isModelLoaded() == true
             val apiPort = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getInt("api_port", 8080)
-            val apiUrl = if (apiRunningForCard) {
-                val ip = activity.getLocalIpAddress()
-                "http://$ip:$apiPort"
-            } else "Stopped"
+            val manualIp = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getString("manual_ip", "") ?: ""
+
+            val apiCardState = when {
+                apiServerObj == null && !apiServerStarting -> ApiCardState.STOPPED
+                apiServerStarting -> ApiCardState.STARTING
+                apiServerObj != null && !modelLoadedForCard -> ApiCardState.RUNNING_NO_MODEL
+                else -> ApiCardState.RUNNING_READY
+            }
+
+            val resolvedIp = manualIp.ifBlank { activity.getLocalIpAddress() }
+            val apiUrl = when (apiCardState) {
+                ApiCardState.STOPPED -> "Stopped"
+                ApiCardState.STARTING -> "Starting…"
+                else -> "http://$resolvedIp:$apiPort"
+            }
+
+            val cardTint = when (apiCardState) {
+                ApiCardState.STOPPED -> MaterialTheme.colorScheme.error
+                ApiCardState.STARTING -> MaterialTheme.colorScheme.onSurfaceVariant
+                ApiCardState.RUNNING_NO_MODEL -> MaterialTheme.colorScheme.tertiary
+                ApiCardState.RUNNING_READY -> MaterialTheme.colorScheme.primary
+            }
+
+            val statusLabel = when (apiCardState) {
+                ApiCardState.STOPPED -> "Stopped"
+                ApiCardState.STARTING -> "Starting…"
+                ApiCardState.RUNNING_NO_MODEL -> "Running — load a model to use · tap to copy"
+                ApiCardState.RUNNING_READY -> "Running · tap to copy"
+            }
+
+            var selfTestResult by remember { mutableStateOf<String?>(null) }
+            val coroutineScopeForTest = rememberCoroutineScope()
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (apiRunningForCard) Modifier.clickable {
+                    .then(if (apiCardState == ApiCardState.RUNNING_READY || apiCardState == ApiCardState.RUNNING_NO_MODEL) Modifier.clickable {
                         // Recompute everything at click time — composition-time values can be stale
                         val svc = activity.getInferenceService()
                         if (svc?.apiServer == null) {
@@ -159,7 +169,9 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                             return@clickable
                         }
                         val port = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getInt("api_port", 8080)
-                        val url = "http://${activity.getLocalIpAddress()}:$port"
+                        val manual = activity.getSharedPreferences("mobileai", Context.MODE_PRIVATE).getString("manual_ip", "") ?: ""
+                        val ip = manual.ifBlank { activity.getLocalIpAddress() }
+                        val url = "http://$ip:$port"
                         val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("api_url", url))
                         // HyperOS can silently block clipboard writes — verify by reading back
@@ -168,33 +180,48 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                         else Toast.makeText(activity, "Copy blocked by system — long-press the URL to select it manually", Toast.LENGTH_LONG).show()
                     } else Modifier)
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(Icons.Outlined.Cloud, null, tint = if (apiRunningForCard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("API Server", style = MaterialTheme.typography.labelMedium)
-                        SelectionContainer {
-                            Text(apiUrl, style = MaterialTheme.typography.bodyMedium)
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Outlined.Cloud, null, tint = cardTint)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("API Server", style = MaterialTheme.typography.labelMedium)
+                            SelectionContainer {
+                                Text(apiUrl, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            Text(statusLabel, style = MaterialTheme.typography.labelSmall, color = cardTint)
                         }
-                        if (apiRunningForCard) Text("tap to copy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (apiCardState == ApiCardState.RUNNING_NO_MODEL || apiCardState == ApiCardState.RUNNING_READY) {
+                            IconButton(onClick = {
+                                coroutineScopeForTest.launch {
+                                    selfTestResult = "Testing…"
+                                    val ok = service?.testApiServerLoopback(apiPort) ?: false
+                                    selfTestResult = if (ok) {
+                                        "Server OK locally. If another device can't connect: confirm it's on the same Wi-Fi network, check your router's AP/client isolation setting, and check background data restrictions for this app."
+                                    } else {
+                                        "Server not responding locally — try restarting it."
+                                    }
+                                }
+                            }) {
+                                Icon(Icons.Outlined.NetworkCheck, "test connection", tint = cardTint)
+                            }
+                        }
+                        Icon(
+                            if (apiCardState == ApiCardState.RUNNING_READY) Icons.Filled.CheckCircle
+                            else if (apiCardState == ApiCardState.STARTING) Icons.Filled.Schedule
+                            else Icons.Filled.Cancel,
+                            null,
+                            tint = cardTint
+                        )
                     }
-                    Icon(
-                        if (apiRunningForCard) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                        null,
-                        tint = if (apiRunningForCard) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                    )
+                    selfTestResult?.let { msg ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(msg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
-
-            StatusCard(
-                icon = Icons.AutoMirrored.Outlined.Send,
-                title = "Telegram Bot",
-                value = if (service?.telegramPoller != null) "Active" else "Inactive",
-                ok = service?.telegramPoller != null
-            )
 
             // ── Inference History ──────────────────────────────────────────
             if (inferenceHistory.isNotEmpty()) {
@@ -252,11 +279,19 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                                         }
                                     }
                                 } else {
+                                    val reloadingThis = appViewModel.chatState.isReloading() && modelName == m.modelConfig.modelId
                                     Button(
                                         onClick = { m.startChat() },
+                                        enabled = !reloadingThis,
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                     ) {
-                                        Text("Load", style = MaterialTheme.typography.labelMedium)
+                                        if (reloadingThis) {
+                                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Loading…", style = MaterialTheme.typography.labelMedium)
+                                        } else {
+                                            Text("Load", style = MaterialTheme.typography.labelMedium)
+                                        }
                                     }
                                 }
                             }
@@ -277,15 +312,23 @@ fun HomeScreen(navController: NavController, appViewModel: AppViewModel, activit
                     Icon(Icons.AutoMirrored.Filled.List, null, modifier = Modifier.padding(end = 4.dp))
                     Text("Models")
                 }
+                val reloading = appViewModel.chatState.isReloading()
                 Button(
                     onClick = {
                         if (isLoaded) navController.navigate("chat")
                         else navController.navigate("models")
                     },
+                    enabled = !reloading,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
-                    Text(if (isLoaded) "Chat" else "Load Model")
+                    if (reloading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Loading…")
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.padding(end = 4.dp))
+                        Text(if (isLoaded) "Chat" else "Load Model")
+                    }
                 }
             }
 
@@ -370,71 +413,25 @@ private fun StatusCard(icon: ImageVector, title: String, value: String, ok: Bool
 }
 
 @Composable
-private fun SystemUsageCard(
-    cpuPercent: Float,
-    cpuHistory: List<Float>,
-    thermalInfo: ThermalInfo,
-    thermalAvailable: Boolean
-) {
-    val cpuColor = when {
-        cpuPercent > 75f -> MaterialTheme.colorScheme.error
-        cpuPercent > 50f -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val thermalColor = when (thermalInfo.state) {
-        ThermalState.CRITICAL -> MaterialTheme.colorScheme.error
-        ThermalState.HOT      -> MaterialTheme.colorScheme.error
-        ThermalState.WARM     -> MaterialTheme.colorScheme.tertiary
-        ThermalState.COOL     -> MaterialTheme.colorScheme.primary
-    }
-    val thermalLabel = when {
-        !thermalAvailable -> "N/A"
-        else -> thermalInfo.state.name
-    }
-    val limitTag = when {
-        thermalInfo.hardLimit -> "  [Hard Limit]"
-        thermalInfo.softLimit -> "  [Soft Limit]"
-        else -> ""
-    }
-    val sourceTag = if (thermalInfo.source == "Battery") "  via battery" else ""
-
+private fun StatusCardWithSubtitle(icon: ImageVector, title: String, value: String, subtitle: String, ok: Boolean) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("System Usage", style = MaterialTheme.typography.labelMedium)
-
-            // CPU row with graph
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.Speed, null, tint = cpuColor, modifier = Modifier.size(20.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            if (cpuPercent < 0f) "CPU  Measuring…" else "CPU  %.0f%%".format(cpuPercent),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = cpuColor
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    CpuGraph(history = cpuHistory, lineColor = cpuColor)
-                }
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(icon, null, tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+            Column {
+                Text(title, style = MaterialTheme.typography.labelMedium)
+                Text(value, style = MaterialTheme.typography.bodyMedium)
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-
-            HorizontalDivider(thickness = 0.5.dp)
-
-            // Thermal row
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.Thermostat, null, tint = thermalColor, modifier = Modifier.size(20.dp))
-                Text(
-                    if (thermalAvailable)
-                        "Thermal  $thermalLabel$limitTag  (%.0f%% headroom$sourceTag)".format(thermalInfo.headroom1s * 100)
-                    else
-                        "Thermal  N/A (Android < 11)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = thermalColor,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                if (ok) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                null,
+                tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
         }
     }
 }
@@ -523,35 +520,3 @@ private fun InferenceHistoryCard(
     }
 }
 
-@Composable
-private fun CpuGraph(history: List<Float>, lineColor: Color) {
-    val gridColor = lineColor.copy(alpha = 0.15f)
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-    ) {
-        val w = size.width
-        val h = size.height
-        val maxSamples = 30
-
-        // Grid lines at 25%, 50%, 75%
-        listOf(0.25f, 0.5f, 0.75f).forEach { frac ->
-            val y = h - (frac * h)
-            drawLine(gridColor, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
-        }
-
-        if (history.size < 2) return@Canvas
-
-        val step = w / (maxSamples - 1).toFloat()
-        val startIdx = (maxSamples - history.size).coerceAtLeast(0)
-
-        val path = Path()
-        history.forEachIndexed { i, value ->
-            val x = (startIdx + i) * step
-            val y = h - (value / 100f * h).coerceIn(0f, h)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        drawPath(path, color = lineColor, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
-    }
-}

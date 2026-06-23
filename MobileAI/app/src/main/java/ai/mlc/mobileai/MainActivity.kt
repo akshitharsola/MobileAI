@@ -145,13 +145,18 @@ class MainActivity : ComponentActivity() {
     fun getLocalIpAddress(): String {
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "unknown"
+            val candidates = mutableListOf<Pair<String, String>>()  // (interfaceName, ip)
             for (iface in interfaces) {
                 if (!iface.isUp || iface.isLoopback) continue
                 for (addr in iface.inetAddresses) {
                     if (addr.isLoopbackAddress || addr.hostAddress?.contains(':') == true) continue
-                    return addr.hostAddress ?: continue
+                    val ip = addr.hostAddress ?: continue
+                    candidates.add(iface.name to ip)
                 }
             }
+            // Prefer the Wi-Fi interface (wlan0) over mobile data, tethering, or VPN interfaces
+            candidates.firstOrNull { it.first == "wlan0" }?.let { return it.second }
+            candidates.firstOrNull()?.let { return it.second }
         } catch (_: Exception) {}
         return "unknown"
     }

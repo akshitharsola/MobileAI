@@ -14,7 +14,8 @@ import androidx.navigation.compose.rememberNavController
 @Composable
 fun NavView(activity: Activity, appViewModel: AppViewModel = viewModel()) {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = "home") {
+    NavHost(navController = navController, startDestination = "splash") {
+        composable("splash") { SplashScreen(navController) }
         composable("home") { HomeScreen(navController, appViewModel, activity as MainActivity) }
         composable("models") { StartView(navController, appViewModel) }
         composable("chat") { ChatView(navController, appViewModel.chatState, activity) }

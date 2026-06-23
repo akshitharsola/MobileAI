@@ -43,7 +43,6 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val ramUsageMB = mutableStateOf(0L)
     val totalRamMB = mutableStateOf(0L)
-    val systemMonitor = SystemMonitor(app)
     val thermalGovernor = ThermalGovernor(app)
     val inferenceStats = mutableStateOf(InferenceStats())
     val inferenceHistory = emptyList<InferenceStats>().toMutableStateList()
@@ -55,13 +54,11 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     init {
         loadAppConfig()
         updateRamUsage()
-        systemMonitor.start()
         thermalGovernor.start()
     }
 
     override fun onCleared() {
         super.onCleared()
-        systemMonitor.stop()
         thermalGovernor.stop()
     }
 
@@ -107,7 +104,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
     inner class ModelState(val record: LocalisModelRecord) {
         var modelInitState = mutableStateOf(
-            if (LiteRtLmEngine.modelFileExists(app, record.filename)) ModelInitState.Finished
+            if (LiteRtLmEngine.modelFileExists(app, record.localFilename)) ModelInitState.Finished
             else ModelInitState.Paused
         )
         val progress = mutableStateOf(0)
@@ -120,8 +117,6 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
 
         fun estimatedVramGB(): String =
             String.format("%.1f", record.estimated_size_bytes.toFloat() / (1024 * 1024 * 1024))
-
-        fun fileSizeMB(): Long = LiteRtLmEngine.modelFileSizeMB(app, record.filename)
 
         fun startChat() { chatState.requestReloadChat(record) }
 
@@ -144,12 +139,12 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             downloadJob?.cancel()
             if (chatState.modelName.value == record.model_id) {
                 chatState.requestTerminateChat {
-                    File(app.getExternalFilesDir(""), record.filename).delete()
+                    File(app.getExternalFilesDir(""), record.localFilename).delete()
                     progress.value = 0; total.value = 1
                     modelInitState.value = ModelInitState.Paused
                 }
             } else {
-                File(app.getExternalFilesDir(""), record.filename).delete()
+                File(app.getExternalFilesDir(""), record.localFilename).delete()
                 progress.value = 0; total.value = 1
                 modelInitState.value = ModelInitState.Paused
             }
@@ -158,15 +153,15 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         fun handleClear() { handleDelete() }
 
         private suspend fun downloadModel() {
-            val destFile = File(app.getExternalFilesDir(""), record.filename)
+            val destFile = File(app.getExternalFilesDir(""), record.localFilename)
             if (destFile.exists()) {
                 withContext(Dispatchers.Main) { modelInitState.value = ModelInitState.Finished }
                 return
             }
             val prefs = app.getSharedPreferences("mobileai", android.content.Context.MODE_PRIVATE)
             val hfToken = prefs.getString("hf_token", "") ?: ""
-            val hfUrl = "https://huggingface.co/litert-community/${record.hf_repo}/resolve/main/${record.filename}"
-            val tempFile = File(app.getExternalFilesDir(""), "${record.filename}.tmp")
+            val hfUrl = "https://huggingface.co/${record.hf_org}/${record.hf_repo}/resolve/main/${record.filename}"
+            val tempFile = File(app.getExternalFilesDir(""), "${record.localFilename}.tmp")
             try {
                 val connection = (URL(hfUrl).openConnection() as java.net.HttpURLConnection).apply {
                     if (hfToken.isNotBlank()) setRequestProperty("Authorization", "Bearer $hfToken")
@@ -174,7 +169,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
                 val responseCode = connection.responseCode
                 if (responseCode == 401) {
-                    throw Exception("HuggingFace auth required. Add your HF token in Settings, and accept the model license on huggingface.co/litert-community/${record.hf_repo}")
+                    throw Exception("HuggingFace auth required. Add your HF token in Settings, and accept the model license on huggingface.co/${record.hf_org}/${record.hf_repo}")
                 }
                 if (responseCode !in 200..299) {
                     throw Exception("Download failed: HTTP $responseCode")
@@ -253,7 +248,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         }
 
         fun requestReloadChat(record: LocalisModelRecord) {
-            if (this.modelName.value == record.model_id && currentRecord?.filename == record.filename) return
+            if (this.modelName.value == record.model_id && currentRecord?.localFilename == record.localFilename) return
             require(interruptable())
             switchToReloading()
             mainReloadChat(record)
@@ -269,7 +264,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
                     engine.unload()
                     engine.load(
                         record.model_id,
-                        LiteRtLmEngine.modelFilePath(app, record.filename),
+                        LiteRtLmEngine.modelFilePath(app, record.localFilename),
                         record.backend
                     )
                     true
@@ -506,6 +501,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         fun interruptable(): Boolean = modelChatState.value == ModelChatState.Ready ||
                 modelChatState.value == ModelChatState.Generating ||
                 modelChatState.value == ModelChatState.Failed
+        fun isReloading(): Boolean = modelChatState.value == ModelChatState.Reloading
     }
 }
 
